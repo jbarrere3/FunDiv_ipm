@@ -35,12 +35,6 @@ set.seed(2)
 
 list(
   
-  # Disturbance parameters to load and format 
-  tar_target(disturbance_parameters_file, "data/parameters_disturbance.Rdata", format = "file"),
-  tar_target(disturbance_parameters, load_and_format_dist.param(disturbance_parameters_file)),
-  tar_target(disturbance_parameters_alliter, load_and_format_dist.param(disturbance_parameters_file, 
-                                                                        calc.type = "all")),
-  
   # Species for which to build IPM
   tar_target(species.names, c("Fagus_sylvatica", "Picea_abies", "Abies_alba", 
                               "Quercus_robur", "Pinus_sylvestris")), 
@@ -60,28 +54,28 @@ list(
   # Create a list of species object to make simulations
   tar_target(species.list, generate_species.list(IPM.list)), 
   
-  # -- Generate a list of forest with one, two or three species
+  # Generate a list of forest with one, two or three species
   tar_target(forest.list, generate_forest_list(species.list, harv_rules.ref)), 
   
   # Run simulations from the list of forests generated
   tar_target(sim.list, run_simulations_from_list(forest.list, tlim = 3000)), 
   
+  # Data.frame containing disturbances to apply
+  tar_target(disturbance.df, data.frame(type = "storm", intensity = 0.5, 
+                                        IsSurv = FALSE, t = 100)), 
   
+  # Make simulations with disturbance starting at equilibrium
+  tar_target(sim.list.disturbed, disturb_forest.list(
+    sim.list, forest.list, disturbance.df)),
   
-  # Plot comparison between disturbance based on mean parameter or all iteration
-  # tar_target(fig_meanParam_vs_meanProba, plot_meanProba_vs_meanParam(
-  #   species.names, disturbance.time = 1500, disturbance.in = "storm", intensity.in = 0.8, IPM.list, 
-  #   duration.disturbance = 5, disturbance_parameters, disturbance_parameters_alliter, 
-  #   "output/fig_meanProba_vs_meanParam.jpg"), format = "file"), 
-  
-  # Plot disturbance applied to monospecific stands
-  tar_target(fig_monosp_disturbed, plot.monosp.disturbances(
-    species.list, disturbance_parameters, disturbance.in = "storm", intensity.in = 0.8, 
-    duration.disturbance = 5, sim.time = 5000, file.in = "output/fig_disturb_monosp.jpg"), 
-    format = "file"), 
   
   # Plot the list of simulations generated (no disturbance so far)
   tar_target(fig_sim.list, plot_sim.list(sim.list, "output/fig_sim_nodist.jpg"), 
+             format = "file"), 
+  
+  # Plot the list of simulations disturbed
+  tar_target(fig_sim.list.disturbed, plot_sim.list(sim.list.disturbed, 
+                                                   "output/fig_sim_dist.jpg"), 
              format = "file")
   
 )

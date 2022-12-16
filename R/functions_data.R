@@ -29,34 +29,6 @@ create_dir_if_needed <- function(file.in){
 }
 
 
-#' Function to load and format disturbance parameters per species
-#' @param disturbance_parameters_file file containing parameters value 
-#' @param calc.type character indicating whether to use mean parameter value ("mean")
-#'                  or all posterior iterations ("all")
-load_and_format_dist.param <- function(disturbance_parameters_file, calc.type = "mean"){
-  
-  # Load the rdata file
-  load(disturbance_parameters_file)
-  
-  # Remove unused disturbance types and species
-  out <- param_per_iteration %>%
-    filter(!(species %in% c("Other broadleaf", "Other conifer"))) %>%
-    filter(disturbance %in% c("storm", "fire", "biotic"))
-  
-  # If the calculation type is mean, average parameters over all mcmc iteration
-  if(calc.type == "mean"){
-    out <- out %>%
-      gather(key = "parameter", value = "value", "a0", "a1", "b", "c", "dbh.intercept", 
-             "dbh.slope", "logratio.intercept", "logratio.slope") %>%
-      group_by(disturbance, species, parameter) %>%
-      summarize(value.mean = mean(value)) %>%
-      spread(key = "parameter", value = "value.mean")
-  }
-  
-  # Return output
-  return(out)
-}
-
 #' Function to load demographic parameters for several species
 #' @param species.names character vector of species ("Genus_species" format)
 load_param_demo <- function(species.names){
@@ -148,7 +120,7 @@ generate_species.list <- function(IPM.list, f.init = def_initBA(20)){
   for(i in 1:length(species.names)){
     # Generate species object for species i
     species.i <- species(IPM.list[[i]], init_pop = f.init,
-                         harvest_fun = Uneven_harv, disturb_fun = def_disturb)
+                         harvest_fun = def_harv, disturb_fun = def_disturb)
     # Add it to the list
     eval(parse(text=paste0("species.list$", species.names[i], " <- species.i")))
   }
@@ -303,3 +275,96 @@ disturb.population <- function(sim, disturbance.in, intensity.in,
   return(distr.disturbed)
 }
 
+#' Function to simulate disturbances from forest list and equilibrium
+#' @param sim.list List of simulations to get population at equilibrium
+#' @param forest.list List of forest used to get sim.list
+#' @param disturbance.df disturbance dataframe
+disturb_forest.list <- function(sim.list, forest.list, disturbance.df){
+  # Initiate the output list
+  list.out <- sim.list
+  
+  # Timing for the simulations with disturbance
+  time.sim  <- max(tree_format(sim.list[[1]])$time, na.rm = TRUE) + max(disturbance.df$t)
+  
+  # Loop on all simulations
+  for(i in 1:length(names(sim.list))){
+    
+    # Printer
+    print(paste0("Running simulation ", i, "/", length(names(forest.list)), 
+                 " - : ", gsub("\\.", "\\ and\\ ", names(forest.list)[i])))
+    
+    # Identify the species present in simulation i
+    species.in.i <- unlist(strsplit(names(sim.list)[i], "\\."))
+    
+    # Initiate population 
+    forest.in.i <- forest.list[[i]]
+    
+    # Formatted output of the simulation i
+    memor.i <- tree_format(sim.list[[i]])
+    
+    # Loop on all species to update the forest
+    for(j in 1:length(species.in.i)){
+      
+      # Get equilibrium for species i
+      equil.j <- memor.i %>%
+        filter(var == "m", equil, species == species.in.i[j]) %>% 
+        pull(value)
+      
+      # Initiate the population at equilibrium
+      forest.in.i$species[[j]]$init_pop <- def_init_k(equil.j*0.03)
+      
+      # Update disturbance function
+      forest.in.i$species[[j]]$disturb_fun <- disturb_fun
+      
+      # Add disturbance coefficients
+      forest.in.i$species[[j]]$disturb_coef <- filter(treeforce::disturb_coef, 
+                                                      species == species.in.i[j])
+      
+    }
+    
+    
+    # Simulate disturbance and add to the output list
+    list.out[[i]] <- sim_deter_forest(forest.in.i, tlim = time.sim,
+                                      equil_dist = time.sim, equil_time = time.sim,
+                                      disturbance  = disturbance.df, verbose = FALSE) 
+    
+  }
+  
+  # Return the output list
+  return(list.out)
+  
+}
+
+
+#' Disturbance function
+#'
+#' @param x population state distribution at time t
+#' @param species The species class object of interest to get mesh and RDIcoef
+#' values from. RDIcoef is a one line dataframe with RDI coefficient for one
+#' species.
+#' @param disturb Disturbance parameters. Highly depend on the disturbance
+#' impact parameters given to the species.
+#' @param ... Not used in this case.
+#' \describe{
+#' \item{qmd}{Forest Quadratic Mean Diameter}
+#' }
+#' @author Maxime Jeaunatre
+#'
+disturb_fun <- function(x, species, disturb = NULL, ...){
+  dots <- list(...)
+  qmd <- dots$qmd
+  size <- species$IPM$mesh
+  coef <- species$disturb_coef
+  if(any(disturb$type %in% coef$disturbance)){
+    coef <- subset(coef, disturbance == disturb$type)
+  } else {
+    stop(sprintf("The species %s miss this disturbance type (%s) parameters",
+                 sp_name(species), disturb$type))
+  }
+  logratio <- log(size / qmd)
+  dbh.scaled = coef$dbh.intercept + size * coef$dbh.slope
+  logratio.scaled = coef$logratio.intercept + logratio * coef$logratio.slope
+  Pkill <- plogis(coef$a0 + coef$a1 * logratio.scaled +
+                    coef$b * disturb$intensity^(coef$c * dbh.scaled))
+  return(x* Pkill) # always return the mortality distribution
+}
