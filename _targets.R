@@ -61,8 +61,9 @@ list(
   tar_target(sim.list, run_simulations_from_list(forest.list, tlim = 3000)), 
   
   # Data.frame containing disturbances to apply
-  tar_target(disturbance.df, data.frame(type = "storm", intensity = 0.5, 
-                                        IsSurv = FALSE, t = 100)), 
+  tar_target(disturbance.df, data.frame(
+    type = rep("storm", 3), intensity = rep(0.5, 3), 
+    IsSurv = rep(FALSE, 3), t = c(100:102))), 
   
   # Make simulations with disturbance starting at equilibrium
   tar_target(sim.list.disturbed, disturb_forest.list(
