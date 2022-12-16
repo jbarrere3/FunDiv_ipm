@@ -69,10 +69,10 @@ list(
   
   
   # Plot comparison between disturbance based on mean parameter or all iteration
-  tar_target(fig_meanParam_vs_meanProba, plot_meanProba_vs_meanParam(
-    species.names, disturbance.time = 1500, disturbance.in = "storm", intensity.in = 0.8, IPM.list, 
-    duration.disturbance = 5, disturbance_parameters, disturbance_parameters_alliter, 
-    "output/fig_meanProba_vs_meanParam.jpg"), format = "file"), 
+  # tar_target(fig_meanParam_vs_meanProba, plot_meanProba_vs_meanParam(
+  #   species.names, disturbance.time = 1500, disturbance.in = "storm", intensity.in = 0.8, IPM.list, 
+  #   duration.disturbance = 5, disturbance_parameters, disturbance_parameters_alliter, 
+  #   "output/fig_meanProba_vs_meanParam.jpg"), format = "file"), 
   
   # Plot disturbance applied to monospecific stands
   tar_target(fig_monosp_disturbed, plot.monosp.disturbances(

@@ -147,8 +147,8 @@ generate_species.list <- function(IPM.list, f.init = def_initBA(20)){
   # Loop on all IPM (and thus on all species)
   for(i in 1:length(species.names)){
     # Generate species object for species i
-    species.i <- new_species(IPM.list[[i]], init_pop = f.init,
-                             harvest_fun = Uneven_harv)
+    species.i <- species(IPM.list[[i]], init_pop = f.init,
+                         harvest_fun = Uneven_harv, disturb_fun = def_disturb)
     # Add it to the list
     eval(parse(text=paste0("species.list$", species.names[i], " <- species.i")))
   }
