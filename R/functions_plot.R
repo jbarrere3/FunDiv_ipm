@@ -6,7 +6,7 @@
 #' @name functions_plot.R  
 #' @description R script containing all functions relative to data
 #               importation and formatting
-#' @author Julien Barrere, Marianne Bernard
+#' @author Julien Barrere
 #
 #
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
