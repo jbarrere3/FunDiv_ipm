@@ -122,65 +122,6 @@ make_IPM_multispecies <- function(fit.list, climate.ref, clim_lab.in,
 
 
 
-#' Fit IPM for several species and one climate
-#' @param fit.list List containing the demographic parameters of each species
-#' @param mesh.m numeric indicating the mesh size
-#' @param mesh.L numeric indicating the lower bound of size
-#' @param BA.max maximum basal area for the integration
-make_IPM_multisp_multiclim <- function(fit.list, mesh.m = 700, mesh.L = 100, BA.max = 200){
-  
-  # Identify the species names
-  species.names <- names(fit.list)
-  
-  # Initialize the list of IPM
-  IPM.list <- list()
-  
-  # Loop on all species
-  for(i in 1:length(species.names)){
-    # Print the species 
-    print(paste0("fit IPM for species ", i, "/", length(species.names), " : ", gsub("\\_", "\\ ", species.names[i])))
-    
-    # For cold margin
-    print("--- cold edge")
-    climate.cold.i <- load_and_format_climate_ipm(species.names[i], N.ref = 1)
-    ipm.cold.i <- make_IPM(
-      species = species.names[i], climate = climate.cold.i, fit =  fit.list[[i]],
-      clim_lab = paste0(species.names[i], "_cold"),
-      mesh = c(m = mesh.m, L = mesh.L, U = as.numeric(fit.list[[i]]$info[["max_dbh"]]) * 1.1),
-      BA = 0:BA.max, verbose = FALSE
-    )
-    
-    # For climate optimum
-    print("--- optimum")
-    climate.optimum.i <- load_and_format_climate_ipm(species.names[i], N.ref = 2)
-    ipm.optimum.i <- make_IPM(
-      species = species.names[i], climate = climate.optimum.i, fit =  fit.list[[i]],
-      clim_lab = paste0(species.names[i], "_optimum"),
-      mesh = c(m = mesh.m, L = mesh.L, U = as.numeric(fit.list[[i]]$info[["max_dbh"]]) * 1.1),
-      BA = 0:BA.max, verbose = FALSE
-    )
-    
-    # For hot margin
-    print("--- hot edge")
-    climate.hot.i <- load_and_format_climate_ipm(species.names[i], N.ref = 3)
-    ipm.hot.i <- make_IPM(
-      species = species.names[i], climate = climate.hot.i, fit =  fit.list[[i]],
-      clim_lab = paste0(species.names[i], "_hot"),
-      mesh = c(m = mesh.m, L = mesh.L, U = as.numeric(fit.list[[i]]$info[["max_dbh"]]) * 1.1),
-      BA = 0:BA.max, verbose = FALSE
-    )
-    
-    # Add to the list
-    eval(parse(text=paste0("IPM.list$", species.names[i], "$cold <- ipm.cold.i")))
-    eval(parse(text=paste0("IPM.list$", species.names[i], "$optimum <- ipm.optimum.i")))
-    eval(parse(text=paste0("IPM.list$", species.names[i], "$hot <- ipm.hot.i")))
-  }
-  
-  # Return the list generated
-  return(IPM.list)
-}
-
-
 #' Generate a list of species object from the list of IPM
 #' @param IPM.list list of fitted IPM
 #' @param f.init Function to initialize basal area
@@ -205,38 +146,6 @@ generate_species.list <- function(IPM.list, f.init = def_initBA(20)){
   return(species.list)
 }
 
-
-
-#' Generate a list of species object from the list of IPM
-#' @param IPM.list_multiclim list of fitted IPM with different climate
-#' @param f.init Function to initialize basal area
-generate_species.list_multiclim <- function(IPM.list_multiclim, f.init = def_initBA(20)){
-  
-  # Names of the species
-  species.names <- names(IPM.list_multiclim)
-  
-  # Initialize the list of species
-  species.list <- list()
-  
-  # Loop on all IPM (and thus on all species)
-  for(i in 1:length(species.names)){
-    # Generate species object for each climate of species i
-    species.cold.i <- species(IPM.list_multiclim[[i]]$cold, init_pop = f.init,
-                              harvest_fun = def_harv, disturb_fun = def_disturb)
-    species.optimum.i <- species(IPM.list_multiclim[[i]]$optimum, init_pop = f.init,
-                                 harvest_fun = def_harv, disturb_fun = def_disturb)
-    species.hot.i <- species(IPM.list_multiclim[[i]]$hot, init_pop = f.init,
-                             harvest_fun = def_harv, disturb_fun = def_disturb)
-    
-    # Add it to the list
-    eval(parse(text=paste0("species.list$", species.names[i], "$cold <- species.cold.i")))
-    eval(parse(text=paste0("species.list$", species.names[i], "$optimum <- species.optimum.i")))
-    eval(parse(text=paste0("species.list$", species.names[i], "$hot <- species.hot.i")))
-  }
-  
-  # Return the output list
-  return(species.list)
-}
 
 
 #' Function to run simulations for a list of forests
@@ -274,177 +183,35 @@ run_simulations_from_list <- function(forest.list, tlim = 2000, targetBA = 40,
 
 
 
-#' Function to run simulations for a list of forests
-#' @param forest.list_multiclim List of forest or species objects with multiple climates
-#' @param tlim Number of simulation iterations (in years)
-#' @param targetBA basal area targetted by the harvest module (in m2)
-#' @param SurfEch Sampled area in ha
-run_simulations_from_list_multiclim <- function(
-  forest.list, tlim = 2000, targetBA = 40, SurfEch = 0.03){
-  
-  # Initialize output list
-  list.out <- list()
-  
-  # Loop on all forests in the list
-  for(i in 1:length(names(forest.list))){
-    
-    # Species printer
-    print(paste0("Running simulations for species ", i, "/", length(names(forest.list)), 
-                 " : ", gsub("\\.", "\\ and\\ ", names(forest.list)[i])))
-    
-    # Run simulations for cold edge
-    print("--- cold edge")
-    sim.cold.i <- sim_deter_forest(
-      forest.list[[i]]$cold, tlim = tlim, equil_time = tlim, equil_dist = 1,
-      harvest = "default", targetBA = targetBA, SurfEch = SurfEch, verbose = FALSE
-    )
-    eval(parse(text=paste0("list.out$", names(forest.list)[i], "$cold <- sim.cold.i")))
-    
-    # Run simulations for optimum
-    print("--- optimum")
-    sim.optimum.i <- sim_deter_forest(
-      forest.list[[i]]$optimum, tlim = tlim, equil_time = tlim, equil_dist = 1,
-      harvest = "default", targetBA = targetBA, SurfEch = SurfEch, verbose = FALSE
-    )
-    eval(parse(text=paste0("list.out$", names(forest.list)[i], "$optimum <- sim.optimum.i")))
-    
-    # Run simulations for hot edge
-    print("--- hot edge")
-    sim.hot.i <- sim_deter_forest(
-      forest.list[[i]]$hot, tlim = tlim, equil_time = tlim, equil_dist = 1,
-      harvest = "default", targetBA = targetBA, SurfEch = SurfEch, verbose = FALSE
-    )
-    eval(parse(text=paste0("list.out$", names(forest.list)[i], "$hot <- sim.hot.i")))
-    
-  }
-  
-  # Return the output list
-  return(list.out)
-}
 
 
-#' Generat a list oof forest, based on all combinations of one, two or three 
-#' species from a list of species objects
+
+#' Generate a list of forest for a specific climate 
 #' @param species.list List of species objects
 #' @param harv_rules.ref List of rules for harvesting
-generate_forest_list <- function(species.list, harv_rules.ref){
+#' @param sp.combinations Vector of species combinations for the forest
+generate_forest_from_combinations <- function(
+  species.list, harv_rules.ref, sp.combinations){
   
-  # Identify the list of species
-  species.in <- names(species.list)
-  
-  # All combinations of mono specific stands
-  onesp <- species.in
-  # All combinations of two-species stands
-  twosp <- (expand.grid(sp1 = species.in, sp2 = species.in) %>%
-              filter(sp1 != sp2) %>%
-              mutate(sp = paste(sp1, sp2, sep = ".")))$sp
-  # All combinations of three-species stands
-  threesp <- (expand.grid(sp1 = species.in, sp2 = species.in, sp3 = species.in) %>%
-                filter(sp1 != sp2 & sp2 != sp3 & sp1 != sp3) %>%
-                mutate(sp = paste(sp1, sp2, sp3, sep = ".")))$sp
-  # All species combinations
-  sp.combinations <- c(onesp, twosp, threesp)
-  
-  # Final list of combinations (without same combination but different order)
-  sp.combinations.final <- c()
-  for(i in 1:length(sp.combinations)){
-    combi.i <- paste(
-      unlist(strsplit(sp.combinations[i], "\\."))[order(unlist(strsplit(sp.combinations[i], "\\.")))], 
-      collapse = "."
-    )
-    if(!(combi.i %in% sp.combinations.final)) sp.combinations.final <- c(sp.combinations.final, combi.i)
-  }
   # Initialize forest list
   list.out <- list()
   
   # Loop on all species combinations
-  for(i in 1:length(sp.combinations.final)){
+  for(i in 1:length(sp.combinations)){
     
     # Vector of species combination i 
-    species.i <- unlist(strsplit(sp.combinations.final[i], "\\."))
+    species.i <- unlist(strsplit(sp.combinations[i], "\\."))
     
     # Generate forest i
     forest.i <- new_forest(species = species.list[species.i], harv_rules = harv_rules.ref)
     
     # Add forest i to the output list
-    eval(parse(text=paste0("list.out$", sp.combinations.final[i], " <- forest.i")))
+    eval(parse(text=paste0("list.out$", sp.combinations[i], " <- forest.i")))
   }
   
   # Return the output list
   return(list.out)
 }
-
-
-
-#' Generat a list oof forest, based on all combinations of one, two or three 
-#' species from a list of species objects
-#' @param species.list List of species objects
-#' @param maxsp numeric: up to how many species per stand should we combine ?
-#' @param harv_rules.ref List of rules for harvesting
-generate_forest_list_multiclim <- function(species.list, maxsp = 1, harv_rules.ref){
-  
-  # Identify the list of species
-  species.in <- names(species.list)
-  
-  # All combinations of mono specific stands
-  onesp <- species.in
-  # All combinations of two-species stands
-  twosp <- (expand.grid(sp1 = species.in, sp2 = species.in) %>%
-              filter(sp1 != sp2) %>%
-              mutate(sp = paste(sp1, sp2, sep = ".")))$sp
-  # All combinations of three-species stands
-  threesp <- (expand.grid(sp1 = species.in, sp2 = species.in, sp3 = species.in) %>%
-                filter(sp1 != sp2 & sp2 != sp3 & sp1 != sp3) %>%
-                mutate(sp = paste(sp1, sp2, sp3, sep = ".")))$sp
-  # All species combinations
-  if(maxsp == 1) sp.combinations <- onesp
-  if(maxsp == 2) sp.combinations <- c(onesp, twosp)
-  if(maxsp == 3) sp.combinations <- c(onesp, twosp, threesp)
-  
-  # Final list of combinations (without same combination but different order)
-  sp.combinations.final <- c()
-  for(i in 1:length(sp.combinations)){
-    combi.i <- paste(
-      unlist(strsplit(sp.combinations[i], "\\."))[order(unlist(strsplit(sp.combinations[i], "\\.")))], 
-      collapse = "."
-    )
-    if(!(combi.i %in% sp.combinations.final)) sp.combinations.final <- c(sp.combinations.final, combi.i)
-  }
-  
-  # Initialize forest list
-  list.out <- list()
-  
-  # Loop on all species combinations
-  for(i in 1:length(sp.combinations.final)){
-    
-    # Vector of species combination i 
-    species.i <- unlist(strsplit(sp.combinations.final[i], "\\."))
-    
-    # Loop on all climate
-    for(j in 1:length(names(species.list[[1]]))){
-      
-      # Initialize list of species to include in forest i, climate j
-      species.list.ij <- sapply(species.i, function(x) NULL)
-      
-      # Include species objects with the right climate 
-      for(k in species.i) species.list.ij[[k]] <- species.list[[k]][[j]]
-      
-      # Generate forest i j
-      forest.ij <- new_forest(species = species.list.ij, harv_rules = harv_rules.ref)
-      
-      # Add forest ij to the output list
-      eval(parse(text=paste0("list.out$", sp.combinations.final[i], "$", 
-                             names(species.list[[1]])[j]," <- forest.ij")))
-      
-    }
-    
-  }
-  
-  # Return the output list
-  return(list.out)
-}
-
-
 
 
 
@@ -509,71 +276,7 @@ disturb_forest.list <- function(sim.list, forest.list, disturbance.df){
 }
 
 
-#' Function to simulate disturbances from forest list and equilibrium
-#' @param sim.list_multiclim List of simulations to get population at equilibrium
-#' @param forest.list_multiclim List of forest used to get sim.list
-#' @param disturbance.df disturbance dataframe
-disturb_forest.list_multiclim <- function(sim.list, forest.list, disturbance.df){
-  
-  # Initiate the output list
-  list.out <- sim.list
-  
-  # Timing for the simulations with disturbance
-  time.sim  <- max(tree_format(sim.list[[1]][[1]])$time, na.rm = TRUE) + max(disturbance.df$t)
-  
-  # Loop on all simulations
-  for(i in 1:length(names(sim.list))){
-    
-    # Printer
-    print(paste0("Running simulation for forest ", i, "/", length(names(forest.list)), 
-                 " : ", gsub("\\.", "\\ and\\ ", names(forest.list)[i])))
-    
-    # Identify the species present in simulation i
-    species.in.i <- unlist(strsplit(names(sim.list)[i], "\\."))
-    
-    # Loop on all climates
-    for(k in 1:length(names(sim.list[[i]]))){
-      
-      # Initiate population 
-      forest.in.ik <- forest.list[[i]][[k]]
-      
-      # Formatted output of the simulation i
-      memor.ik <- tree_format(sim.list[[i]][[k]])
-      
-      # Loop on all species to update the forest
-      for(j in 1:length(species.in.i)){
-        
-        # Get equilibrium for species i
-        equil.ijk <- memor.ik %>%
-          filter(var == "m", equil, species == species.in.i[j]) %>% 
-          pull(value)
-        
-        # Initiate the population at equilibrium
-        forest.in.ik$species[[j]]$init_pop <- def_init_k(equil.ijk*0.03)
-        
-        # Update disturbance function
-        forest.in.ik$species[[j]]$disturb_fun <- disturb_fun
-        
-        # Add disturbance coefficients
-        forest.in.ik$species[[j]]$disturb_coef <- filter(treeforce::disturb_coef, 
-                                                        species == species.in.i[j])
-        
-      }
-      
-      
-      # Simulate disturbance and add to the output list
-      list.out[[i]][[k]] <- sim_deter_forest(forest.in.ik, tlim = time.sim,
-                                        equil_dist = time.sim, equil_time = time.sim,
-                                        disturbance  = disturbance.df, verbose = FALSE) 
-      
-    }
 
-  }
-  
-  # Return the output list
-  return(list.out)
-  
-}
 
 #' Get resilience and FD from simulations
 #' @param sim.list.disturbed List of simulations where a disturbance occured
@@ -621,6 +324,89 @@ get_resilience_and_FD <- function(sim.list.disturbed, pc1_per_species){
 }
 
 
+
+#' Function to generate a list with climate and all possible sp combinations
+#' @param FUNDIV_climate_species data with climate and sp presence per plot
+#' @param quantiles.in range between 0 and 1 of pca1 value to select
+#' @param disturbance.in name of the disturbance we plan to apply to filter 
+#'                       species combinations compatible
+make_climate <- function(FUNDIV_climate_species, quantiles.in, 
+                         disturbance.in = "storm"){
+  
+  # Initialize output list
+  out = list()
+  
+  # Get the range of pca_values based on quantiles.in
+  climate.in = as.numeric(quantile(FUNDIV_climate_species$pca1, 
+                                   probs = quantiles.in))
+  
+  # climate vector
+  out$climate = setNames(
+    object = as.numeric(
+      FUNDIV_climate_species %>%
+        filter(pca1 > climate.in[1] & pca1 < climate.in[2]) %>%
+        summarize(sgdd = mean(sgdd), wai = mean(wai), PC1 = mean(pca1), PC2 = mean(pca2)) %>%
+        mutate(sgdd2 = sgdd^2, wai2 = wai^2, sgddb = 1/sgdd, 
+               waib = 1/(1 + wai), N = 2, SDM = 0) %>%
+        dplyr::select(sgdd, wai, sgddb, waib, wai2, sgdd2, PC1, PC2, N, SDM)
+    ), c("sgdd", "wai", "sgddb", "waib", "wai2", "sgdd2", "PC1", "PC2", "N", "SDM")
+  )
+  
+  # Vector of all species
+  species_vec = colnames(FUNDIV_climate_species)[grep("_", colnames(FUNDIV_climate_species))]
+  
+  # Adjust species combinations to the disturbance if one is specified
+  if(disturbance.in %in% c("storm", "fire", "biotic")){
+    # Vector of all species for which we have disturbance parameters
+    data("disturb_coef")
+    species_vec_dist = (disturb_coef %>%
+                          filter(disturbance %in% disturbance.in))$species
+    # Restrict the species vector to these species
+    species_vec = species_vec[which(species_vec %in% species_vec_dist)]
+  }
+  
+  # species combinations for this climate
+  # -- Paste all species presence absence to create binary code
+  eval(parse(text = paste0(
+    "data.in <- FUNDIV_climate_species %>% mutate(combi = paste0(", 
+    paste(species_vec, collapse = ", "), "))")))
+  # -- Restrict to the climate specified
+  data.in <- data.in %>%
+    filter(pca1 > climate.in[1] & pca1 < climate.in[2])
+  # -- Select the main combinations
+  codes <- (data.in %>%
+              group_by(combi) %>%
+              summarize(n = n()) %>%
+              filter(combi != paste(rep(0, length(species_vec)), collapse = "")) %>%
+              arrange(desc(n)))$combi[1:25]
+  # -- initialize combinations and species vector
+  combinations.in = c(); species.in = c()
+  # -- Loop on all codes
+  for(i in 1:length(codes)){
+    # Decode to get a vector of species
+    vec.i = decode_species(codes[i], species_vec)
+    # Add combination to the vector
+    combinations.in = c(combinations.in, paste(vec.i, collapse = "."))
+    # Store all species in species vector
+    species.in = c(species.in, vec.i)
+  } 
+  # Add to the final list the combinations and the list of all species
+  out$combinations = combinations.in
+  out$species = unique(species.in)
+  
+  # Return output
+  return(out)
+}
+
+
+#' Function to convert a binary code in a vector of species
+#' @param code binary code where one indicates presence, 0 absence
+#' @param species_vec vector of species, same length as code
+decode_species <- function(code, species_vec){
+  (data.frame(present = as.numeric(strsplit(code, split = "")[[1]]), 
+              species = species_vec) %>%
+     filter(present == 1))$species
+}
 
 
 #' Disturbance function
