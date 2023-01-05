@@ -173,3 +173,59 @@ plot_FD_vs_resilience <- function(FD_and_resilience, file.in){
   # return the name of all the plots made
   return(file.in)
 }
+
+
+#' Function to make a map of Fundiv plots with different climates
+#' @param FUNDIV_climate_species Data with species presence and climate per plot
+#' @param climate.list list of range (0 to 1) along the pca axis hot/dry to cold/wet
+#' @param file.in name including path of the file to save
+map_climates = function(FUNDIV_climate_species, climate.list, file.in){
+  
+  # Create directory if needed 
+  create_dir_if_needed(file.in)
+  
+  # Initialize the data for plotting
+  data.in = FUNDIV_climate_species %>%
+    mutate(climate = "none") %>%
+    dplyr::select(plotcode, longitude, latitude, pca1, climate) %>%
+    st_as_sf(coords = c("longitude", "latitude"), crs = 4326, agr = "constant")
+  
+  # Loop on all climates to specify which plot is in which climate
+  for(i in 1:length(names(climate.list))){
+    
+    # Identify the range of pca1 associated with climate i
+    range.i = as.numeric(quantile(data.in$pca1, probs = climate.list[[i]]))
+    
+    # Modify data.in for plots that are in the range
+    data.in = data.in %>%
+      mutate(climate = ifelse(pca1 > range.i[1] & pca1 < range.i[2], 
+                              names(climate.list)[i], climate))
+  }
+  
+  # Final formatting
+  data.in = data.in  %>% 
+    # Factorize climate list for plotting
+    mutate(climate = factor(climate, levels = c("none", names(climate.list))))
+  
+  ## - Final plot
+  plot.out <- ne_countries(scale = "medium", returnclass = "sf") %>%
+    ggplot(aes(geometry = geometry)) +
+    geom_sf(fill = "#343A40", color = "gray", show.legend = F, size = 0.2) + 
+    geom_sf(data = data.in, aes(color = climate, size = climate)) +
+    scale_color_manual(values = c("gray", colorRampPalette(c("blue", "red"))(length(names(climate.list))))) +
+    scale_size_manual(values = c(0.01, rep(0.5, length(names(climate.list))))) +
+    coord_sf(xlim = c(-10, 32), ylim = c(36, 71)) +
+    theme(panel.background = element_rect(color = 'black', fill = 'white'), 
+          panel.grid = element_blank(),
+          legend.title = element_blank(),
+          legend.key = element_blank(), 
+          legend.position = c(0.15, 0.85))
+  
+  # Save the plot
+  ggsave(file.in, plot.out, width = 10, height = 14, 
+         units = "cm", dpi = 600, bg = "white")
+  
+  # Return the name of the file
+  return(file.in)
+  
+}

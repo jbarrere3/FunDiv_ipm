@@ -276,19 +276,84 @@ disturb_forest.list <- function(sim.list, forest.list, disturbance.df){
 }
 
 
-
-
-#' Get resilience and FD from simulations
-#' @param sim.list.disturbed List of simulations where a disturbance occured
-#' @param pc1_per_species Position of each species along the growth-mortality trade-off
-get_resilience_and_FD <- function(sim.list.disturbed, pc1_per_species){
+#' Get resilience, resistance and recovery from simulations with disturbance
+#' @param sim.list.disturbed List of simulations where a disturbance occurred
+#' @param disturbance.df disturbance dataset used to generate the disturbance
+get_resilience_metrics <- function(sim.list.disturbed, disturbance.df){
   
   # Initialize the output
   out <- data.frame(
     ID = c(1:length(names(sim.list.disturbed))),
     sp.combination = names(sim.list.disturbed), 
-    FD = NA_real_, CWM = NA_real_, Resilience = NA_real_
+    resistance = NA_real_, recovery = NA_real_, resilience = NA_real_, 
+    t0 = NA_real_, thalf = NA_real_
   )
+  
+  # Loop on all species combination
+  for(i in 1:dim(out)[1]){
+    
+    # Format the output
+    data.i <- tree_format(sim.list.disturbed[[i]]) %>%
+      filter(var == "BAsp") %>%
+      filter(!equil) %>%
+      group_by(time) %>%
+      summarize(BA = sum(value))
+    
+    
+    ## Calculate resistance
+    #  - Basal area at equilibrium
+    Beq.i = mean((data.i %>% filter(time < min(disturbance.df$t)))$BA)
+    # - Basal area after disturbance
+    Bdist.i = (data.i %>% filter(time == max(disturbance.df$t)+1))$BA
+    # - Resistance
+    out$resistance[i] = Beq.i/(Beq.i - Bdist.i)
+    
+    ## Calculate recovery
+    #  - Time at which population recovered fully
+    Rec.time.i = min((data.i %>% 
+                        filter(time > max(disturbance.df$t)) %>%
+                        filter(BA > Beq.i))$time)
+    # - Recovery = time to recover minus time of disturbance
+    out$recovery[i] = Rec.time.i - max(disturbance.df$t)
+    
+    ## Calculate resilience
+    out$resilience[i] <- 1/sum((data.i %>%
+                                  mutate(BA0 = .[which(.$time == 1), "BA"]) %>%
+                                  mutate(diff = abs(BA - BA0)))$diff)
+    
+    ## Calculate t0
+    #  - Time at which population recovered to 5% of the basal area lost
+    Rec.0.time.i = min((data.i %>% 
+                          filter(time > max(disturbance.df$t)) %>%
+                          filter(BA > (Beq.i + 19*Bdist.i)/20))$time)
+    # - Recovery = time to recover minus time of disturbance
+    out$t0[i] = Rec.0.time.i - max(disturbance.df$t)
+    
+    ## Calculate thalf
+    #  - Time at which population recovered to 50% of the basal area lost
+    Rec.half.time.i = min((data.i %>% 
+                             filter(time > max(disturbance.df$t)) %>%
+                             filter(BA > (Beq.i + Bdist.i)/2))$time)
+    # - Recovery = time to recover minus time of disturbance
+    out$thalf[i] = Rec.half.time.i - max(disturbance.df$t)
+    
+  }
+  
+  # Return output
+  return(out)
+}
+
+
+#' Get functional diversity from simulations
+#' @param sim.list.disturbed List of simulations where a disturbance occured
+#' @param pc1_per_species Position of each species along the growth-mortality trade-off
+get_FD <- function(sim.list.disturbed, pc1_per_species){
+  
+  # Initialize the output
+  out <- data.frame(
+    ID = c(1:length(names(sim.list.disturbed))),
+    sp.combination = names(sim.list.disturbed), 
+    FD = NA_real_, CWM = NA_real_)
   
   
   # Loop on all species combination
@@ -298,13 +363,6 @@ get_resilience_and_FD <- function(sim.list.disturbed, pc1_per_species){
     data.i <- tree_format(sim.list.disturbed[[i]]) %>%
       filter(var == "BAsp") %>%
       filter(!equil)
-    
-    # Calculate resilience
-    out$Resilience[i] <- 1/sum((data.i %>%
-                                  group_by(time) %>%
-                                  summarize(BA = sum(value)) %>%
-                                  mutate(BA0 = .[which(.$time == 1), "BA"]) %>%
-                                  mutate(diff = abs(BA - BA0)))$diff)
     
     # Calculate functional diversity and CWM at equilibrium
     FD_CWM_i <- data.i %>%
@@ -322,7 +380,6 @@ get_resilience_and_FD <- function(sim.list.disturbed, pc1_per_species){
   # Return output
   return(out)
 }
-
 
 
 #' Function to generate a list with climate and all possible sp combinations
@@ -354,6 +411,8 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
   
   # Vector of all species
   species_vec = colnames(FUNDIV_climate_species)[grep("_", colnames(FUNDIV_climate_species))]
+  # Remove hornbeam from this vector as too unstable in the simulations
+  species_vec = species_vec[species_vec != "Carpinus_betulus"]
   
   # Adjust species combinations to the disturbance if one is specified
   if(disturbance.in %in% c("storm", "fire", "biotic")){
@@ -397,6 +456,12 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
   # Return output
   return(out)
 }
+
+
+
+
+
+
 
 
 #' Function to convert a binary code in a vector of species

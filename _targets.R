@@ -115,6 +115,9 @@ list(
   # Make simulations with disturbance starting at equilibrium
   tar_target(sim.list.disturbed_cold, disturb_forest.list(
     sim.list_cold, forest.list_cold, disturbance.df)),
+  # Get resilience
+  tar_target(resilience_cold, get_resilience_metrics(
+    sim.list.disturbed_cold, disturbance.df)),
   
   
   ## - With mid climate
@@ -130,6 +133,9 @@ list(
   # Make simulations with disturbance starting at equilibrium
   tar_target(sim.list.disturbed_mid, disturb_forest.list(
     sim.list_mid, forest.list_mid, disturbance.df)),
+  # Get resilience
+  tar_target(resilience_mid, get_resilience_metrics(
+    sim.list.disturbed_mid, disturbance.df)),
   
   
   ## - With hot climate
@@ -145,49 +151,9 @@ list(
   # Make simulations with disturbance starting at equilibrium
   tar_target(sim.list.disturbed_hot, disturb_forest.list(
     sim.list_hot, forest.list_hot, disturbance.df)),
-  
-  
-  
-  
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Plots -----
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  
-  
-  ## -- With cold climate
-  
-  # Plot the list of simulations generated (no disturbance so far)
-  tar_target(fig_sim.list_cold, plot_sim.list(
-    sim.list_cold, "output/cold/fig_sim_nodist_cold.jpg"), 
-    format = "file"), 
-  # Plot the list of simulations disturbed
-  tar_target(fig_sim.list.disturbed_cold, plot_sim.list(
-    sim.list.disturbed_cold, "output/cold/fig_sim_dist_cold.jpg"), 
-    format = "file"),
-  
-  
-  ## -- With mid climate
-  
-  # Plot the list of simulations generated (no disturbance so far)
-  tar_target(fig_sim.list_mid, plot_sim.list(
-    sim.list_mid, "output/mid/fig_sim_nodist_mid.jpg"), 
-    format = "file"), 
-  # Plot the list of simulations disturbed
-  tar_target(fig_sim.list.disturbed_mid, plot_sim.list(
-    sim.list.disturbed_mid, "output/cold/fig_sim_dist_mid.jpg"), 
-    format = "file"),
-  
-  
-  ## -- With hot climate
-  
-  # Plot the list of simulations generated (no disturbance so far)
-  tar_target(fig_sim.list_hot, plot_sim.list(
-    sim.list_hot, "output/hot/fig_sim_nodist_hot.jpg"), 
-    format = "file"), 
-  # Plot the list of simulations disturbed
-  tar_target(fig_sim.list.disturbed_hot, plot_sim.list(
-    sim.list.disturbed_hot, "output/hot/fig_sim_dist_hot.jpg"), 
-    format = "file"),
+  # Get resilience
+  tar_target(resilience_hot, get_resilience_metrics(
+    sim.list.disturbed_hot, disturbance.df)),
   
   
   
@@ -204,9 +170,66 @@ list(
   # Get coordinates in the first pca axis per species
   tar_target(pc1_per_species, get_pc1_per_species(traits)),
   
+  # Extract functional diversity of species combinations in each climate
+  tar_target(FD_cold, get_FD(sim.list.disturbed_cold, pc1_per_species)),
+  tar_target(FD_mid, get_FD(sim.list.disturbed_mid, pc1_per_species)),
+  tar_target(FD_hot, get_FD(sim.list.disturbed_hot, pc1_per_species)),
+  
+  
+  
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Plots -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  
   # Plot the co-variation between traits
   tar_target(fig_traits_pca, plot_traits_pca(traits, "output/fig_traits.jpg"), 
-             format = "file")
+             format = "file"),
+  
+  # Map the different climates tested
+  tar_target(fig_map_climate, map_climates(FUNDIV_climate_species, climate.list = list(
+    cold = c(0.095, 0.105),  mid = c(0.495, 0.505), hot = c(0.895, 0.905)), 
+    file.in = "output/map_climate.jpg"), format = "file"),
+  
+  
+  
+  ## -- Simulations with cold climate
+  
+  # Plot the list of simulations generated (no disturbance so far)
+  tar_target(fig_sim.list_cold, plot_sim.list(
+    sim.list_cold, "output/cold/fig_sim_nodist_cold.jpg"), 
+    format = "file"), 
+  # Plot the list of simulations disturbed
+  tar_target(fig_sim.list.disturbed_cold, plot_sim.list(
+    sim.list.disturbed_cold, "output/cold/fig_sim_dist_cold.jpg"), 
+    format = "file"),
+  
+  
+  
+  ## -- Simulations with mid climate
+  
+  # Plot the list of simulations generated (no disturbance so far)
+  tar_target(fig_sim.list_mid, plot_sim.list(
+    sim.list_mid, "output/mid/fig_sim_nodist_mid.jpg"), 
+    format = "file"), 
+  # Plot the list of simulations disturbed
+  tar_target(fig_sim.list.disturbed_mid, plot_sim.list(
+    sim.list.disturbed_mid, "output/cold/fig_sim_dist_mid.jpg"), 
+    format = "file"),
+  
+  
+  
+  ## -- Simulations with hot climate
+  
+  # Plot the list of simulations generated (no disturbance so far)
+  tar_target(fig_sim.list_hot, plot_sim.list(
+    sim.list_hot, "output/hot/fig_sim_nodist_hot.jpg"), 
+    format = "file"), 
+  # Plot the list of simulations disturbed
+  tar_target(fig_sim.list.disturbed_hot, plot_sim.list(
+    sim.list.disturbed_hot, "output/hot/fig_sim_dist_hot.jpg"), 
+    format = "file")
   
 )
 
