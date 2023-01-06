@@ -226,6 +226,9 @@ disturb_forest.list <- function(sim.list, forest.list, disturbance.df){
   # Timing for the simulations with disturbance
   time.sim  <- max(tree_format(sim.list[[1]])$time, na.rm = TRUE) + max(disturbance.df$t)
   
+  # Initialize the simulations to keep in the final list
+  sim_to_keep = c()
+  
   # Loop on all simulations
   for(i in 1:length(names(sim.list))){
     
@@ -233,42 +236,59 @@ disturb_forest.list <- function(sim.list, forest.list, disturbance.df){
     print(paste0("Running simulation ", i, "/", length(names(forest.list)), 
                  " - : ", gsub("\\.", "\\ and\\ ", names(forest.list)[i])))
     
-    # Identify the species present in simulation i
-    species.in.i <- unlist(strsplit(names(sim.list)[i], "\\."))
     
-    # Initiate population 
-    forest.in.i <- forest.list[[i]]
+    # Calculate basal area at equilibrium to check for NA
+    BAeq.i = sum((tree_format(sim.list[[i]]) %>%
+                    filter(var == "BAsp") %>%
+                    filter(time == max(.$time)-1))$value)
     
-    # Formatted output of the simulation i
-    memor.i <- tree_format(sim.list[[i]])
-    
-    # Loop on all species to update the forest
-    for(j in 1:length(species.in.i)){
+    # Check that the simulation went well (no NA at equilibrium)
+    if(!is.na(BAeq.i)){
       
-      # Get equilibrium for species i
-      equil.j <- memor.i %>%
-        filter(var == "m", equil, species == species.in.i[j]) %>% 
-        pull(value)
+      # Identify the species present in simulation i
+      species.in.i <- unlist(strsplit(names(sim.list)[i], "\\."))
       
-      # Initiate the population at equilibrium
-      forest.in.i$species[[j]]$init_pop <- def_init_k(equil.j*0.03)
+      # Initiate population 
+      forest.in.i <- forest.list[[i]]
       
-      # Update disturbance function
-      forest.in.i$species[[j]]$disturb_fun <- disturb_fun
+      # Formatted output of the simulation i
+      memor.i <- tree_format(sim.list[[i]])
       
-      # Add disturbance coefficients
-      forest.in.i$species[[j]]$disturb_coef <- filter(treeforce::disturb_coef, 
-                                                      species == species.in.i[j])
+      # Loop on all species to update the forest
+      for(j in 1:length(species.in.i)){
+        
+        # Get equilibrium for species i
+        equil.j <- memor.i %>%
+          filter(var == "m", equil, species == species.in.i[j]) %>% 
+          pull(value)
+        
+        # Initiate the population at equilibrium
+        forest.in.i$species[[j]]$init_pop <- def_init_k(equil.j*0.03)
+        
+        # Update disturbance function
+        forest.in.i$species[[j]]$disturb_fun <- disturb_fun
+        
+        # Add disturbance coefficients
+        forest.in.i$species[[j]]$disturb_coef <- filter(treeforce::disturb_coef, 
+                                                        species == species.in.i[j])
+        
+      }
       
-    }
-    
-    
-    # Simulate disturbance and add to the output list
-    list.out[[i]] <- sim_deter_forest(forest.in.i, tlim = time.sim,
-                                      equil_dist = time.sim, equil_time = time.sim,
-                                      disturbance  = disturbance.df, verbose = FALSE) 
+      
+      # Simulate disturbance and add to the output list
+      list.out[[i]] <- sim_deter_forest(forest.in.i, tlim = time.sim,
+                                        equil_dist = time.sim, equil_time = time.sim,
+                                        disturbance  = disturbance.df, verbose = FALSE) 
+      
+      # We keep the simulation i
+      sim_to_keep = c(sim_to_keep, i)
+      
+    } 
     
   }
+  
+  # Only keep the simulations for which there was no NA at equilibrium
+  list.out = list.out[sim_to_keep]
   
   # Return the output list
   return(list.out)

@@ -22,7 +22,7 @@ library(targets)
 lapply(grep("R$", list.files("R"), value = TRUE), function(x) source(file.path("R", x)))
 # install if needed and load packages
 packages.in <- c("dplyr", "ggplot2", "treeforce", "tidyr", "data.table", 
-                 "factoextra", "modi")
+                 "factoextra", "modi", "sf", "rnaturalearth")
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
@@ -215,7 +215,7 @@ list(
     format = "file"), 
   # Plot the list of simulations disturbed
   tar_target(fig_sim.list.disturbed_mid, plot_sim.list(
-    sim.list.disturbed_mid, "output/cold/fig_sim_dist_mid.jpg"), 
+    sim.list.disturbed_mid, "output/mid/fig_sim_dist_mid.jpg"), 
     format = "file"),
   
   
