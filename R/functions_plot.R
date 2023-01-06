@@ -229,3 +229,261 @@ map_climates = function(FUNDIV_climate_species, climate.list, file.in){
   return(file.in)
   
 }
+
+
+#' Plot the effect of functional strategy on resilience metrics (H1)
+#' @param data_models data with functional diversity, resilience metrics
+#' @param file.in name including path of the file to save
+plot_resilience_vs_CMW = function(data_models, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Format data
+  data.in = data_models %>%
+    filter(resistance > 0) %>%
+    gather(key = "variable", value = "value",  
+           "resistance", "resilience", "recovery") %>%
+    mutate(climate = factor(climate, levels = unique(.$climate))) %>%
+    filter(is.finite(value))
+  
+  
+  
+  # Initialize list of plots and of models
+  list_plots = list()
+  
+  # Loop on all variables tested
+  for(i in 1:length(unique(data.in$variable))){
+    
+    # Variable i
+    var.i = unique(data.in$variable)[i]
+    
+    # Make model
+    mod.i = lm(log(value) ~ CWM, 
+               data = subset(data.in, variable == var.i))
+    
+    # Data fit
+    data_fit.i = data.frame(CWM = seq(from = min(data.in$CWM), 
+                                      to = max(data.in$CWM), 
+                                      length.out = 1000)) %>%
+      cbind(exp(predict(mod.i, newdata = ., interval = "confidence", 
+                        level = 0.95))) %>%
+      rename(value = fit)
+    
+    # Plot 
+    plot.i = data_fit.i %>%
+      ggplot(aes(x = CWM, y = value, group = 1)) + 
+      geom_line() + 
+      geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.5) + 
+      geom_point(data = subset(data.in, variable == var.i), shape = 21, 
+                 color = "black", aes(fill = climate), inherit.aes = TRUE) + 
+      scale_fill_manual(
+        values = colorRampPalette(c("blue", "red"))(length(unique(data.in$climate)))) +
+      ylab(toupper(var.i)) + 
+      ggtitle(paste0("F = ", round(anova(mod.i)[1, 4], digits = 1), ", ", 
+                     scales::pvalue(coefficients(summary(mod.i))[2, 4], 
+                                    accuracy = 0.01, add_p = TRUE))) +
+      theme(panel.background = element_rect(fill = "white", color = "black"), 
+            panel.grid = element_blank(), 
+            legend.title = element_blank(), 
+            legend.key = element_blank(), 
+            legend.position = "none")
+    
+    # Add to the output lists
+    eval(parse(text = paste0("list_plots$", var.i, " = plot.i")))
+  }
+  
+  # Add legend to the output list
+  list_plots$legend = get_legend(plot.i + theme(legend.position = "left", 
+                                                legend.text = element_text(size = 16)))
+  
+  # Final plot
+  plot.out = plot_grid(plotlist = list_plots, align = "hv", scale = 0.9,
+                       labels = c(letters[c(1:(length(names(list_plots)) - 1))], ""))
+  
+  # Save the plot
+  ggsave(file.in, plot.out, width = 16, height = 16, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # return the name of the file
+  return(file.in)
+  
+}
+
+
+#' Plot the effect of functional strategy on resilience metrics (H1)
+#' @param data_models data with functional diversity, resilience metrics
+#' @param file.in name including path of the file to save
+plot_resilience_vs_climate = function(data_models, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Format data
+  data.in = data_models %>%
+    filter(resistance > 0) %>%
+    gather(key = "variable", value = "value",  
+           "resistance", "resilience", "recovery") %>%
+    mutate(climate = factor(climate, levels = unique(.$climate))) %>%
+    filter(is.finite(value))
+  
+  
+  
+  # Initialize list of plots and of models
+  list_plots = list()
+  
+  # Loop on all variables tested
+  for(i in 1:length(unique(data.in$variable))){
+    
+    # Variable i
+    var.i = unique(data.in$variable)[i]
+    
+    # Make model
+    mod.i = aov(log(value) ~ climate, 
+                data = subset(data.in, variable == var.i))
+    
+    # Data for plotting
+    data.i = data.in %>%
+      # Only keep the right variable
+      filter(variable == var.i)
+    
+    # Data with the significance letters
+    data.labels.i = data.i %>%
+      # Calculate the 75% quantile
+      group_by(climate) %>%
+      summarize(label.pos = max(value)) %>%
+      # Add 10% of max value 
+      mutate(label.pos = label.pos + 0.2*max(data.i$value)) %>%
+      left_join(
+        data.frame(
+          climate = unique(data.in$climate), 
+          label = as.character(cld(glht(mod.i, linfct=mcp(climate="Tukey")))$mcletters$Letters)
+        ), 
+        by = "climate") 
+    
+    # Make plot i
+    plot.i = data.i %>%
+      ggplot(aes(x = climate, y = value, fill = climate)) + 
+      geom_boxplot(alpha = 0.6) + 
+      scale_fill_manual(
+        values = colorRampPalette(c("blue", "red"))(length(unique(data.in$climate)))) + 
+      geom_dotplot(binaxis='y', stackdir='center', dotsize=0.8) + 
+      geom_text(data = data.labels.i, aes(label = label, y = label.pos), 
+                size = 6) + 
+      xlab("CLIMATE") + ylab(toupper(var.i)) + 
+      ggtitle(paste0(
+        "F = ", round(as.numeric(summary(mod.i)[[1]][["F value"]][1]), digits = 1), 
+        ", ", scales::pvalue(as.numeric(summary(mod.i)[[1]][["Pr(>F)"]][1]), 
+                             accuracy = 0.01, add_p = TRUE)
+      )) +
+      theme(panel.background = element_rect(fill = "white", color = "black"), 
+            panel.grid = element_blank(), 
+            legend.position = "none", 
+            legend.title = element_blank(), 
+            axis.text.x = element_blank(), 
+            axis.ticks.x = element_blank())
+    
+    # Add to the output lists
+    eval(parse(text = paste0("list_plots$", var.i, " = plot.i")))
+  }
+  
+  # Add legend to the output list
+  list_plots$legend = get_legend(plot.i + theme(legend.position = "left", 
+                                                legend.text = element_text(size = 16)))
+  
+  # Final plot
+  plot.out = plot_grid(plotlist = list_plots, align = "hv", scale = 0.9,
+                       labels = c(letters[c(1:(length(names(list_plots)) - 1))], ""))
+  
+  # Save the plot
+  ggsave(file.in, plot.out, width = 16, height = 16, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # return the name of the file
+  return(file.in)
+  
+}
+
+
+
+#' Plot the effect of functional strategy on resilience metrics (H1)
+#' @param data_models data with functional diversity, resilience metrics
+#' @param file.in name including path of the file to save
+plot_resilience_vs_FD = function(data_models, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Format data
+  data.in = data_models %>%
+    filter(resistance > 0) %>%
+    gather(key = "variable", value = "value",  
+           "resistance", "resilience", "recovery") %>%
+    filter(is.finite(value))
+  
+  # Data for plotting
+  data.out = expand.grid(variable = unique(data.in$variable), 
+                         climate = unique(data.in$climate), 
+                         Est = NA_real_, Est.low = NA_real_, 
+                         Est.high = NA_real_)
+  
+  
+  # Loop on all variables tested
+  for(i in 1:length(unique(data.in$variable))){
+    
+    # Variable i
+    var.i = unique(data.in$variable)[i]
+    
+    # Loop on all climates
+    for(j in 1:length(unique(data.in$climate))){
+      
+      # climate j
+      climate.j = unique(data.in$climate)[j]
+      
+      # Make model
+      mod.ij = lm(log(value) ~ FD, 
+                  data = (data.in %>%
+                            filter(variable == var.i) %>%
+                            filter(climate == climate.j)))
+      
+      # Line of the output dataset associated with var i and climate j
+      line.ij = which(data.out$variable == var.i & data.out$climate == climate.j)
+      
+      # Fill the output dataset
+      data.out[line.ij, "Est"] = as.numeric(coefficients(mod.ij)[2])
+      data.out[line.ij, "Est.low"] = as.numeric(confint(mod.ij)[2, 1])
+      data.out[line.ij, "Est.high"] = as.numeric(confint(mod.ij)[2, 2])
+      
+    }
+    
+  }
+  
+  # Final plot
+  plot.out = data.out %>%
+    mutate(climate = factor(climate, levels = unique(.$climate))) %>%
+    mutate(variable = toupper(variable)) %>%
+    ggplot(aes(x = climate, y = Est, fill = climate)) + 
+    geom_errorbar(aes(ymin = Est.low, ymax = Est.high), width = 0.2) + 
+    geom_point(shape = 21, size = 3) +
+    scale_fill_manual(
+      values = colorRampPalette(c("blue", "red"))(length(unique(data.in$climate)))) + 
+    xlab("Climate") + ylab("Effect of functional diversity") + 
+    facet_wrap(~ variable) + 
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(),
+          legend.title = element_blank(), 
+          legend.key = element_blank(),
+          axis.text.x = element_blank(), 
+          axis.ticks.x = element_blank())
+  
+  # Save the plot
+  ggsave(file.in, plot.out, width = 20, height = 8, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # return the name of the file
+  return(file.in)
+  
+}
+

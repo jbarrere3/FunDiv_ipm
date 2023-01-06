@@ -22,7 +22,8 @@ library(targets)
 lapply(grep("R$", list.files("R"), value = TRUE), function(x) source(file.path("R", x)))
 # install if needed and load packages
 packages.in <- c("dplyr", "ggplot2", "treeforce", "tidyr", "data.table", 
-                 "factoextra", "modi", "sf", "rnaturalearth")
+                 "factoextra", "modi", "sf", "rnaturalearth", "scales", 
+                 "cowplot", "multcomp")
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
@@ -98,7 +99,7 @@ list(
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Make simulations -----
+  # -- Make simulations and extract outputs -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
   
@@ -157,6 +158,7 @@ list(
   
   
   
+  
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Traits -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -175,6 +177,13 @@ list(
   tar_target(FD_mid, get_FD(sim.list.disturbed_mid, pc1_per_species)),
   tar_target(FD_hot, get_FD(sim.list.disturbed_hot, pc1_per_species)),
   
+  # Format resilience and functional diversity data from different climates
+  tar_target(data_models, format_resilience_FD(
+    list.in = list(cold = list(resilience = resilience_cold, FD = FD_cold), 
+                   mid = list(resilience = resilience_mid, FD = FD_mid), 
+                   hot = list(resilience = resilience_hot, FD = FD_hot))
+  )), 
+  
   
   
   
@@ -191,6 +200,18 @@ list(
   tar_target(fig_map_climate, map_climates(FUNDIV_climate_species, climate.list = list(
     cold = c(0.095, 0.105),  mid = c(0.495, 0.505), hot = c(0.895, 0.905)), 
     file.in = "output/map_climate.jpg"), format = "file"),
+  
+  # Plot the effect of community weighted mean on resilience metrics
+  tar_target(fig_resilience_vs_CWM, plot_resilience_vs_CMW(
+    data_models, "output/analyses/fig_resilience_vs_CWM.jpg"), format = "file"),
+  
+  # Plot the effect of climate on resilience
+  tar_target(fig_resilience_vs_climate, plot_resilience_vs_climate(
+    data_models, "output/analyses/fig_resilience_vs_climate.jpg"), format = "file"),
+  
+  # Plot the effect of functional diversity on resilience
+  tar_target(fig_resilience_vs_FD, plot_resilience_vs_FD(
+    data_models, "output/analyses/fig_resilience_vs_FD.jpg"), format = "file"),
   
   
   

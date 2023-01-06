@@ -494,6 +494,35 @@ decode_species <- function(code, species_vec){
 }
 
 
+
+
+
+#' Function to format resilience and fd for different climates
+#' @param list.in list with one element per climate, each element being a list 
+#'                with two elements: resilience and FD
+format_resilience_FD = function(list.in){
+  # Loop on all climates
+  for(i in 1:length(names(list.in))){
+    
+    # Format climate i as dataframe
+    data.i = list.in[[i]]$resilience %>%
+      left_join(list.in[[i]]$FD, by = c("ID", "sp.combination")) %>%
+      mutate(climate = names(list.in)[i])
+    
+    # Add to final output
+    if(i == 1) data = data.i
+    else data = rbind(data, data.i)
+  }
+  
+  # Return final data frame
+  return(data)
+}
+
+
+
+
+
+
 #' Disturbance function
 #'
 #' @param x population state distribution at time t
