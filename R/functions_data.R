@@ -269,7 +269,7 @@ disturb_forest.list <- function(sim.list, forest.list, disturbance.df){
         forest.in.i$species[[j]]$disturb_fun <- disturb_fun
         
         # Add disturbance coefficients
-        forest.in.i$species[[j]]$disturb_coef <- filter(treeforce::disturb_coef, 
+        forest.in.i$species[[j]]$disturb_coef <- filter(matreex::disturb_coef, 
                                                         species == species.in.i[j])
         
       }
