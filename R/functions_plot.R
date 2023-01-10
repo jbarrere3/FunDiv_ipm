@@ -138,6 +138,74 @@ plot_traits_pca <- function(traits, file.in){
 }
 
 
+#' Function to plot the sgdd wai pca and the climate defined
+#' @param FUNDIV_climate_species data with species presence and climate per FUNDIV plot
+#' @param climate.list list of climates to show in the pca
+#' @param file.in name of the fileto save, including path
+plot_pca_climate = function(FUNDIV_climate_species, climate.list, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Remake pca to plot the arrows
+  pca = prcomp(FUNDIV_climate_species[, c("sgdd", "wai")], 
+               center = TRUE, scale = TRUE)
+  
+  # Extract results for individuals
+  data_pca_ind = data.frame(plotcode = FUNDIV_climate_species$plotcode) %>%
+    cbind(as.data.frame(get_pca_ind(pca)[[1]])) %>%
+    rename("pca1" = "Dim.1", "pca2" = "Dim.2") %>%
+    mutate(climate = "none")
+  
+  # Extract results for variables
+  data_var_pca = get_pca_var(pca)[[1]] %>%
+    as.data.frame() %>%
+    mutate(var = rownames(.)) %>%
+    rename("pca1" = "Dim.1", "pca2" = "Dim.2") %>%
+    mutate(pca1 = pca1*2, pca2 = pca2*2)
+  
+  # Loop on all climates to specify which plot is in which climate
+  for(i in 1:length(names(climate.list))){
+    
+    # Identify the range of pca1 associated with climate i
+    range.i = as.numeric(quantile(data_pca_ind$pca1, probs = climate.list[[i]]))
+    
+    # Modify data.in for plots that are in the range
+    data_pca_ind = data_pca_ind %>%
+      mutate(climate = ifelse(pca1 > range.i[1] & pca1 < range.i[2], 
+                              names(climate.list)[i], climate))
+  }
+  
+  
+  # Plot the pca
+  plot.out = data_pca_ind %>%
+    mutate(climate = factor(climate, levels = c("none", names(climate.list)))) %>%
+    ggplot(aes(x = pca1, y = pca2, color = climate)) + 
+    geom_point(alpha = 0.5) + 
+    geom_segment(aes(x = 0, y = 0, xend = pca1, yend = pca2), 
+                 data = data_var_pca, type = "closed", color = "red",
+                 arrow = arrow(length = unit(0.1, "cm"))) + 
+    geom_text(data = data_var_pca, aes(label = var), size = 5, color = "red", 
+              nudge_y = 0.1) +
+    scale_color_manual(values = c("gray", colorRampPalette(c("blue", "red"))(length(names(climate.list))))) +
+    geom_hline(size = 0.2, yintercept = 0, color = "#6C757D", linetype = "dashed") + 
+    geom_vline(size = 0.2, xintercept = 0, color = "#6C757D", linetype = "dashed") + 
+    xlab(paste0("PCA1 (", round(summary(pca)$importance[2, 1]*100, digits = 2), "%)")) +
+    ylab(paste0("PCA2 (", round(summary(pca)$importance[2, 2]*100, digits = 2), "%)")) +
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          axis.title = element_text(size = 15), 
+          legend.key = element_blank())
+  
+  # - Save the plot
+  ggsave(file.in, plot.out, width = 16, height = 13, 
+         units = "cm", dpi = 600, bg = "white")
+  
+  # return the name of all the plots made
+  return(file.in)
+}
+
+
 
 #' Plot the effect of functional diversity on resilience
 #' @param FD_and_resilience Dataset contaiing fd and resilience per species

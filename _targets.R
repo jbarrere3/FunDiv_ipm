@@ -201,6 +201,11 @@ list(
     cold = c(0.095, 0.105),  mid = c(0.495, 0.505), hot = c(0.895, 0.905)), 
     file.in = "output/map_climate.jpg"), format = "file"),
   
+  # Plot the pca of sgdd and wai and the different climate selected
+  tar_target(fig_pca_climate, plot_pca_climate(FUNDIV_climate_species, climate.list = list(
+    cold = c(0.095, 0.105),  mid = c(0.495, 0.505), hot = c(0.895, 0.905)), 
+    file.in = "output/pca_climate.jpg"), format = "file"),
+  
   # Plot the effect of community weighted mean on resilience metrics
   tar_target(fig_resilience_vs_CWM, plot_resilience_vs_CMW(
     data_models, "output/analyses/fig_resilience_vs_CWM.jpg"), format = "file"),

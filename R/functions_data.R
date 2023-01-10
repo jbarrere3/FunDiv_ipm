@@ -168,8 +168,8 @@ run_simulations_from_list <- function(forest.list, tlim = 2000, targetBA = 40,
     
     # Run simulation without harvest
     sim.i <- sim_deter_forest(
-      forest.list[[i]], tlim = tlim, equil_time = tlim, equil_dist = 1,
-      harvest = "default", targetBA = targetBA, SurfEch = SurfEch, verbose = FALSE
+      forest.list[[i]], tlim = tlim, equil_time = tlim*3, equil_dist = 250, 
+      equil_diff = 1, harvest = "default", SurfEch = SurfEch, verbose = FALSE
     )
     
     # Add simulation to the output list
@@ -240,7 +240,7 @@ disturb_forest.list <- function(sim.list, forest.list, disturbance.df){
     # Calculate basal area at equilibrium to check for NA
     BAeq.i = sum((tree_format(sim.list[[i]]) %>%
                     filter(var == "BAsp") %>%
-                    filter(time == max(.$time)-1))$value)
+                    filter(time == max(.$time) - 1))$value)
     
     # Check that the simulation went well (no NA at equilibrium)
     if(!is.na(BAeq.i)){
@@ -333,8 +333,11 @@ get_resilience_metrics <- function(sim.list.disturbed, disturbance.df){
     Rec.time.i = min((data.i %>% 
                         filter(time > max(disturbance.df$t)) %>%
                         filter(BA > Beq.i))$time)
+    # - Basal area 20 years after disturbance
+    Bdist20.i = (data.i %>% filter(time == max(disturbance.df$t)+21))$BA
     # - Recovery = time to recover minus time of disturbance
-    out$recovery[i] = Rec.time.i - max(disturbance.df$t)
+    #out$recovery[i] = Rec.time.i - max(disturbance.df$t)
+    out$recovery[i] = abs(Bdist20.i - Bdist.i)/20
     
     ## Calculate resilience
     out$resilience[i] <- 1/sum((data.i %>%
