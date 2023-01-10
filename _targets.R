@@ -72,11 +72,11 @@ list(
   
   # Make different climates before fitting IPM
   tar_target(climate.cold, make_climate(FUNDIV_climate_species, 
-                                        quantiles.in = c(0.095, 0.105))), 
+                                        quantiles.in = c(0.09, 0.11))), 
   tar_target(climate.mid, make_climate(FUNDIV_climate_species, 
-                                       quantiles.in = c(0.495, 0.505))), 
+                                       quantiles.in = c(0.49, 0.51))), 
   tar_target(climate.hot, make_climate(FUNDIV_climate_species, 
-                                       quantiles.in = c(0.895, 0.905))), 
+                                       quantiles.in = c(0.89, 0.91))), 
   
   
   # Fit IPM for species list from cold climate

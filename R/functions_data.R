@@ -452,15 +452,26 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
   eval(parse(text = paste0(
     "data.in <- FUNDIV_climate_species %>% mutate(combi = paste0(", 
     paste(species_vec, collapse = ", "), "))")))
+  # -- Calculate the number of species per species combination
+  eval(parse(text = paste0(
+    "data.in <- data.in %>% mutate(n.sp = ", 
+    paste(species_vec, collapse = " + "), ")")))
   # -- Restrict to the climate specified
   data.in <- data.in %>%
     filter(pca1 > climate.in[1] & pca1 < climate.in[2])
   # -- Select the main combinations
-  codes <- (data.in %>%
-              group_by(combi) %>%
-              summarize(n = n()) %>%
-              filter(combi != paste(rep(0, length(species_vec)), collapse = "")) %>%
-              arrange(desc(n)))$combi[1:25]
+  data_codes <- data.in %>%
+    group_by(combi, n.sp) %>%
+    summarize(n = n()) %>%
+    filter(n.sp > 0) %>%
+    arrange(desc(n.sp), desc(n))
+  codes = c()
+  for(j in 1:length(unique(data_codes$n.sp))){
+    codes.j = (data_codes %>%
+                 filter(n.sp == unique(data_codes$n.sp)[j]))$combi
+    if(length(codes.j) > 7) codes = c(codes, codes.j[c(1:8)])
+    else codes = c(codes, codes.j)
+  }
   # -- initialize combinations and species vector
   combinations.in = c(); species.in = c()
   # -- Loop on all codes
