@@ -477,14 +477,14 @@ plot_resilience_vs_CMW_and_FD = function(data_models, file.in){
       plot_grid(plotlist = list_plots_effect, align = "h", nrow = 1, scale = 0.9, 
                 labels = paste0("(", letters[c(1:length(unique(data.in$variable)))], ")")), 
       plot_grid(plotlist = list_plots, align = "h", nrow = 1, scale = 0.9), 
-      nrow = 2, rel_heights = c(0.3, 1), align = "v"
+      nrow = 2, rel_heights = c(0.5, 1), align = "v"
     ), 
     get_legend(plot.i + theme(legend.position = "left")), 
     nrow = 1, rel_widths = c(1, 0.1)
   )
   
   # Save the plot
-  ggsave(file.in, plot.out, width = 22, height = 8, units = "cm", 
+  ggsave(file.in, plot.out, width = 24, height = 10, units = "cm", 
          dpi = 600, bg = "white")
   
   # return the name of the file
