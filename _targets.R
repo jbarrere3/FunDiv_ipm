@@ -196,14 +196,9 @@ list(
   tar_target(fig_traits_pca, plot_traits_pca(traits, "output/fig_traits.jpg"), 
              format = "file"),
   
-  # Map the different climates tested
-  tar_target(fig_map_climate, map_climates(FUNDIV_climate_species, climate.list = list(
-    cold = c(0.095, 0.105),  mid = c(0.495, 0.505), hot = c(0.895, 0.905)), 
-    file.in = "output/map_climate.jpg"), format = "file"),
-  
   # Plot the pca of sgdd and wai and the different climate selected
   tar_target(fig_pca_climate, plot_pca_climate(FUNDIV_climate_species, climate.list = list(
-    cold = c(0.095, 0.105),  mid = c(0.495, 0.505), hot = c(0.895, 0.905)), 
+    cold = c(0.09, 0.11),  mid = c(0.49, 0.51), hot = c(0.89, 0.91)), 
     file.in = "output/pca_climate.jpg"), format = "file"),
   
   # Plot the effect of community weighted mean on resilience metrics
@@ -218,7 +213,23 @@ list(
   tar_target(fig_resilience_vs_FD, plot_resilience_vs_FD(
     data_models, "output/analyses/fig_resilience_vs_FD.jpg"), format = "file"),
   
-  
+  # Plot combined effect of CWM and FD on resilience metrics
+  # -- all climates
+  tar_target(fig_res_vs_fd_and_cwm_all, plot_resilience_vs_CMW_and_FD(
+    data_models, "output/analyses/fig_res_vs_fd_and_cwm_all.jpg"), 
+    format = "file"),
+  # -- cold climate
+  tar_target(fig_res_vs_fd_and_cwm_cold, plot_resilience_vs_CMW_and_FD(
+    subset(data_models, climate == "cold"), "output/analyses/fig_res_vs_fd_and_cwm_cold.jpg"), 
+    format = "file"),
+  # -- mid climate
+  tar_target(fig_res_vs_fd_and_cwm_mid, plot_resilience_vs_CMW_and_FD(
+    subset(data_models, climate == "mid"), "output/analyses/fig_res_vs_fd_and_cwm_mid.jpg"), 
+    format = "file"),
+  # -- hot climate
+  tar_target(fig_res_vs_fd_and_cwm_hot, plot_resilience_vs_CMW_and_FD(
+    subset(data_models, climate == "hot"), "output/analyses/fig_res_vs_fd_and_cwm_hot.jpg"), 
+    format = "file"),
   
   ## -- Simulations with cold climate
   

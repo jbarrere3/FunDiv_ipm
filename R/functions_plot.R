@@ -378,6 +378,120 @@ plot_resilience_vs_CMW = function(data_models, file.in){
   
 }
 
+#' Plot the effect of functional strategy on resilience metrics (H1)
+#' @param data_models data with functional diversity, resilience metrics
+#' @param file.in name including path of the file to save
+plot_resilience_vs_CMW_and_FD = function(data_models, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Format data
+  data.in = data_models %>%
+    filter(resistance > 0) %>%
+    mutate(CWM.scaled = scale(.$CWM), 
+           FD.scaled = scale(.$FD)) %>%
+    gather(key = "variable", value = "value",  
+           "resistance", "resilience", "recovery") %>%
+    filter(is.finite(value))
+  
+  # model to unscale CWM
+  mod.unscale.CWM = lm(CWM ~ CWM.scaled, data = subset(data.in, var = "resistance"))
+  mod.unscale.FD = lm(FD ~ FD.scaled, data = subset(data.in, var = "resistance"))
+  
+  # Initialize list of plots and of models
+  list_plots = list()
+  list_plots_effect = list()
+  
+  # Loop on all variables tested
+  for(i in 1:length(unique(data.in$variable))){
+    
+    # Variable i
+    var.i = unique(data.in$variable)[i]
+    
+    # Make model
+    mod.i = lm(log(value) ~ CWM.scaled*FD.scaled, 
+               data = subset(data.in, variable == var.i))
+    
+    # Data fit
+    data_fit.i = expand.grid(CWM.scaled = seq(from = min(data.in$CWM.scaled), 
+                                              to = max(data.in$CWM.scaled), 
+                                              length.out = 1000), 
+                             FD.scaled = quantile(
+                               subset(data.in, variable == var.i)$FD.scaled, 
+                               probs = c(0.1, 0.5, 0.9)
+                             )) %>%
+      mutate(CWM = predict(mod.unscale.CWM, newdata = .), 
+             FD = predict(mod.unscale.FD, newdata = .)) %>%
+      cbind(exp(predict(mod.i, newdata = ., interval = "confidence", 
+                        level = 0.95))) %>%
+      rename(value = fit)
+    
+    # Plot values
+    plot.i = data_fit.i %>%
+      ggplot(aes(x = CWM, y = value, group = FD, color = FD, fill = FD)) + 
+      geom_line(show.legend = FALSE) + 
+      geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.3, color = NA) + 
+      geom_point(data = subset(data.in, variable == var.i), shape = 21, 
+                 color = "black", inherit.aes = TRUE, size = 2) + 
+      scale_fill_gradientn(colors = colorRampPalette(c("#DCE1DE", "#3E8914"))(5), 
+                           values = quantile(data.in$FD, c(0, 0.2, 0.5, 0.8, 1))) +
+      scale_color_gradientn(colors = colorRampPalette(c("#DCE1DE", "#3E8914"))(5), 
+                            values = quantile(data.in$FD, c(0, 0.2, 0.5, 0.8, 1))) +
+      ylab(toupper(var.i)) + 
+      theme(panel.background = element_rect(fill = "white", color = "black"), 
+            panel.grid = element_blank(), 
+            legend.key = element_blank(), 
+            legend.position = "none", 
+            legend.text = element_text(size = 14), 
+            legend.title = element_text(size = 16))
+    
+    # Plot confidence interval around estimates
+    plot.effect.i = data.frame(
+      var = c("Int", "CWM", "FD", "CWM:FD"), 
+      est = coef(summary(mod.i))[, 1], 
+      low = confint(mod.i)[, 1], 
+      high = confint(mod.i)[, 2]
+    ) %>%
+      filter(var != "Int") %>%
+      mutate(signif = ifelse(low > 0 | high < 0, "yes", "no")) %>%
+      ggplot(aes(x = var, y = est, color = signif)) + 
+      geom_point() + 
+      geom_errorbar(aes(ymin = low, ymax = high), width = 0) + 
+      geom_hline(yintercept = 0, linetype = "dashed", color = "gray") + 
+      scale_color_manual(values = c("gray", "black")) + 
+      theme(panel.background = element_rect(fill = "white", color = "black"), 
+            panel.grid = element_blank(), 
+            legend.position = "none") + 
+      xlab("") + ylab("") +
+      coord_flip()
+    
+    # Add to the output lists
+    eval(parse(text = paste0("list_plots$", var.i, " = plot.i")))
+    eval(parse(text = paste0("list_plots_effect$", var.i, " = plot.effect.i")))
+  }
+  
+  # Final plot
+  plot.out <- plot_grid(
+    plot_grid(
+      plot_grid(plotlist = list_plots_effect, align = "h", nrow = 1, scale = 0.9, 
+                labels = paste0("(", letters[c(1:length(unique(data.in$variable)))], ")")), 
+      plot_grid(plotlist = list_plots, align = "h", nrow = 1, scale = 0.9), 
+      nrow = 2, rel_heights = c(0.3, 1), align = "v"
+    ), 
+    get_legend(plot.i + theme(legend.position = "left")), 
+    nrow = 1, rel_widths = c(1, 0.1)
+  )
+  
+  # Save the plot
+  ggsave(file.in, plot.out, width = 22, height = 8, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # return the name of the file
+  return(file.in)
+  
+}
+
 
 #' Plot the effect of functional strategy on resilience metrics (H1)
 #' @param data_models data with functional diversity, resilience metrics
