@@ -455,6 +455,7 @@ plot_resilience_vs_CMW_and_FD = function(data_models, file.in){
     ) %>%
       filter(var != "Int") %>%
       mutate(signif = ifelse(low > 0 | high < 0, "yes", "no")) %>%
+      mutate(signif = factor(signif, levels = c("no", "yes"))) %>%
       ggplot(aes(x = var, y = est, color = signif)) + 
       geom_point() + 
       geom_errorbar(aes(ymin = low, ymax = high), width = 0) + 
