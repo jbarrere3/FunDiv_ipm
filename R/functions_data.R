@@ -469,7 +469,7 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
   for(j in 1:length(unique(data_codes$n.sp))){
     codes.j = (data_codes %>%
                  filter(n.sp == unique(data_codes$n.sp)[j]))$combi
-    if(length(codes.j) > 7) codes = c(codes, codes.j[c(1:8)])
+    if(length(codes.j) > 10) codes = c(codes, codes.j[c(1:10)])
     else codes = c(codes, codes.j)
   }
   # -- initialize combinations and species vector

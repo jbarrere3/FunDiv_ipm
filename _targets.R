@@ -72,11 +72,11 @@ list(
   
   # Make different climates before fitting IPM
   tar_target(climate.cold, make_climate(FUNDIV_climate_species, 
-                                        quantiles.in = c(0.09, 0.11))), 
+                                        quantiles.in = c(0.075, 0.125))), 
   tar_target(climate.mid, make_climate(FUNDIV_climate_species, 
-                                       quantiles.in = c(0.49, 0.51))), 
+                                       quantiles.in = c(0.475, 0.525))), 
   tar_target(climate.hot, make_climate(FUNDIV_climate_species, 
-                                       quantiles.in = c(0.89, 0.91))), 
+                                       quantiles.in = c(0.875, 0.925))), 
   
   
   # Fit IPM for species list from cold climate
@@ -112,7 +112,7 @@ list(
     species.list_cold, harv_rules.ref, climate.cold$combinations)), 
   # Run simulations
   tar_target(sim.list_cold, run_simulations_from_list(
-    forest.list_cold, tlim = 3000)), 
+    forest.list_cold, tlim = 4000)), 
   # Make simulations with disturbance starting at equilibrium
   tar_target(sim.list.disturbed_cold, disturb_forest.list(
     sim.list_cold, forest.list_cold, disturbance.df)),
@@ -130,7 +130,7 @@ list(
     species.list_mid, harv_rules.ref, climate.mid$combinations)), 
   # Run simulations
   tar_target(sim.list_mid, run_simulations_from_list(
-    forest.list_mid, tlim = 3000)), 
+    forest.list_mid, tlim = 4000)), 
   # Make simulations with disturbance starting at equilibrium
   tar_target(sim.list.disturbed_mid, disturb_forest.list(
     sim.list_mid, forest.list_mid, disturbance.df)),
@@ -148,7 +148,7 @@ list(
     species.list_hot, harv_rules.ref, climate.hot$combinations)), 
   # Run simulations
   tar_target(sim.list_hot, run_simulations_from_list(
-    forest.list_hot, tlim = 3000)), 
+    forest.list_hot, tlim = 4000)), 
   # Make simulations with disturbance starting at equilibrium
   tar_target(sim.list.disturbed_hot, disturb_forest.list(
     sim.list_hot, forest.list_hot, disturbance.df)),
@@ -198,7 +198,7 @@ list(
   
   # Plot the pca of sgdd and wai and the different climate selected
   tar_target(fig_pca_climate, plot_pca_climate(FUNDIV_climate_species, climate.list = list(
-    cold = c(0.09, 0.11),  mid = c(0.49, 0.51), hot = c(0.89, 0.91)), 
+    cold = c(0.075, 0.125),  mid = c(0.475, 0.525), hot = c(0.875, 0.925)), 
     file.in = "output/pca_climate.jpg"), format = "file"),
   
   # Plot the effect of community weighted mean on resilience metrics
