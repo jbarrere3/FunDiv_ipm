@@ -72,7 +72,7 @@ list(
   
   # Generate some climates
   # -- iterations along all climates that will be created (one iteration per climate)
-  tar_target(clim.index, c(1:4)),
+  tar_target(clim.index, c(1:5)),
   # -- list of climates
   tar_target(climate_list, create_climate_list(length(clim.index))),
   # -- generate one climate object per iteration with branching
@@ -80,11 +80,18 @@ list(
     climate,
     make_climate(FUNDIV_climate_species, 
                  quantiles.in = climate_list[[clim.index]], 
-                 nsp_per_richness = 2),
+                 nsp_per_richness = 10),
     pattern = map(clim.index), 
     iteration = "list"
-  ) 
+  ), 
   
+  # Fit IPMs, one list per climate
+  tar_target(IPM.list, make_IPM_multispecies(
+    fit.list.allspecies[climate[[clim.index]]$species], 
+    climate[[clim.index]]$climate, 
+    clim_lab.in = names(climate_list)[clim.index]),
+  pattern = map(clim.index), 
+  iteration = "list")
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
