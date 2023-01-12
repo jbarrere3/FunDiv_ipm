@@ -439,6 +439,8 @@ plot_resilience_vs_CMW_and_FD = function(data_models, file.in){
       scale_color_gradientn(colors = colorRampPalette(c("#DCE1DE", "#3E8914"))(5), 
                             values = quantile(data.in$FD, c(0, 0.2, 0.5, 0.8, 1))) +
       ylab(toupper(var.i)) + 
+      ylim(0, 2*max(c(max(data_fit.i$value, na.rm = TRUE), 
+                      max(subset(data.in, variable == var.i)$value, na.rm = TRUE)))) +
       theme(panel.background = element_rect(fill = "white", color = "black"), 
             panel.grid = element_blank(), 
             legend.key = element_blank(), 
