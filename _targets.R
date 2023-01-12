@@ -91,7 +91,25 @@ list(
     climate[[clim.index]]$climate, 
     clim_lab.in = names(climate_list)[clim.index]),
   pattern = map(clim.index), 
-  iteration = "list")
+  iteration = "list"), 
+  
+  # Create species object
+  tar_target(species.list, generate_species.list(IPM.list[[clim.index]]), 
+             pattern = map(clim.index), iteration = "list"), 
+  
+  # Create forest object
+  tar_target(forest.list, generate_forest_from_combinations(
+    species.list[[clim.index]], harv_rules.ref, climate[[clim.index]]$combinations), 
+    pattern = map(clim.index), iteration = "list"), 
+  
+  # Run simulation from random population to get equilibrium
+  tar_target(sim.list, run_simulations_from_list(forest.list[[clim.index]], tlim = 4000), 
+             pattern = map(clim.index), iteration = "list"),
+  
+  # Run simulations with disturbance starting at equilibrium
+  tar_target(sim.list.disturbed_cold, disturb_forest.list(
+    sim.list[[clim.index]], forest.list[[clim.index]], disturbance.df), 
+    pattern = map(clim.index), iteration = "list")
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
