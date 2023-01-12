@@ -427,8 +427,12 @@ plot_resilience_vs_CMW_and_FD = function(data_models, file.in){
                         level = 0.95))) %>%
       rename(value = fit)
     
+    # Maximum value that can be plotted (so that variation are visible)
+    max.i = 2*max(c(max(data_fit.i$value, na.rm = TRUE), 
+                    max(subset(data.in, variable == var.i)$value, na.rm = TRUE)))
     # Plot values
     plot.i = data_fit.i %>%
+      mutate(upr = ifelse(upr > max.i, max.i, upr)) %>%
       ggplot(aes(x = CWM, y = value, group = FD, color = FD, fill = FD)) + 
       geom_line(show.legend = FALSE) + 
       geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.3, color = NA) + 
@@ -439,8 +443,6 @@ plot_resilience_vs_CMW_and_FD = function(data_models, file.in){
       scale_color_gradientn(colors = colorRampPalette(c("#DCE1DE", "#3E8914"))(5), 
                             values = quantile(data.in$FD, c(0, 0.2, 0.5, 0.8, 1))) +
       ylab(toupper(var.i)) + 
-      ylim(0, 2*max(c(max(data_fit.i$value, na.rm = TRUE), 
-                      max(subset(data.in, variable == var.i)$value, na.rm = TRUE)))) +
       theme(panel.background = element_rect(fill = "white", color = "black"), 
             panel.grid = element_blank(), 
             legend.key = element_blank(), 
