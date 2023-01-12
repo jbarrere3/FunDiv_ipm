@@ -410,8 +410,10 @@ get_FD <- function(sim.list.disturbed, pc1_per_species){
 #' @param quantiles.in range between 0 and 1 of pca1 value to select
 #' @param disturbance.in name of the disturbance we plan to apply to filter 
 #'                       species combinations compatible
+#' @param nsp_per_richness number of sp combinations to select per sp richness
 make_climate <- function(FUNDIV_climate_species, quantiles.in, 
-                         disturbance.in = "storm"){
+                         disturbance.in = "storm", 
+                         nsp_per_richness = 10){
   
   # Initialize output list
   out = list()
@@ -469,7 +471,7 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
   for(j in 1:length(unique(data_codes$n.sp))){
     codes.j = (data_codes %>%
                  filter(n.sp == unique(data_codes$n.sp)[j]))$combi
-    if(length(codes.j) > 10) codes = c(codes, codes.j[c(1:10)])
+    if(length(codes.j) > nsp_per_richness) codes = c(codes, codes.j[c(1:nsp_per_richness)])
     else codes = c(codes, codes.j)
   }
   # -- initialize combinations and species vector
@@ -492,6 +494,27 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
 }
 
 
+#' Function that creates climate list based on quantiles
+#' @param n.clim integer: number of climate to create in the list
+create_climate_list = function(n.clim){
+  
+  # Vector that contains a sequence of quantiles value from 0 to 1
+  vec.in = seq(from = 0, to = 1, length.out = n.clim+1)
+  
+  # Initialize the output list
+  list.out = vector(mode = "list", length = n.clim)
+  
+  # Loop on all climates
+  for(i in 1:n.clim){
+    # Attribute a name to climate i
+    names(list.out)[i] = paste("quantile", vec.in[i], vec.in[i+1], sep = "_")
+    # Add vector of quantile for climate i
+    list.out[[i]] = c(vec.in[i], vec.in[i+1])
+  }
+  
+  # Return final list
+  return(list.out)
+}
 
 
 
