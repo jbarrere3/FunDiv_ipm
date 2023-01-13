@@ -242,6 +242,47 @@ generate_forest_from_combinations <- function(
 }
 
 
+#' Function to create a list of forest to create
+#' @param climate list of climate objects
+#' 
+make_forest_list = function(climate, IPM_list){
+  
+  # Loop on all climates
+  for(i in 1:length(names(climate))){
+    # Dataframe for climate i
+    out.i = data.frame(
+      ID.climate = i, 
+      combinations = climate[[i]]$combinations, 
+      ID.IPM_code = NA_character_
+    )
+    
+    # Loop on all combination top extract the ipm id of each combination
+    for(j in 1:dim(out.i)[1]){
+      # Species of combination j
+      species.j = unlist(strsplit(out.i$combinations[j], "\\."))
+      # Identify the corresponding ID.IPM
+      ID.IPM.j = (data.frame(species = species.j, ID.climate = i) %>%
+                    left_join(IPM_list, by = c("species", "ID.climate")))$ID.IPM
+      # Merge these ID in a code
+      out.i$ID.IPM_code[j] = paste(ID.IPM.j, collapse = ".")
+    }
+    # Add to final dataset
+    if(i == 1) out = out.i
+    else out = rbind(out, out.i)
+    
+  }
+  
+  # Final formatting
+  out = out %>%
+    mutate(ID.forest = c(1:dim(.)[1])) %>%
+    dplyr::select(ID.forest, ID.climate, combinations, ID.IPM_code)
+  
+  # Return output
+  return(out)
+  
+}
+
+
 
 #' Function to simulate disturbances from forest list and equilibrium
 #' @param sim.list List of simulations to get population at equilibrium
@@ -323,70 +364,148 @@ disturb_forest.list <- function(sim.list, forest.list, disturbance.df){
   
 }
 
+#' Function to get for each simulation the equilibrium 
+#' @param sim.equilibrium list of simulations until the equilibrium
+get_equil = function(sim.equilibrium){
+  
+  # Initialize output
+  list.out <- list()
+  
+  # First element of output: boolean to indicate if equilibrium is reached
+  list.out$reached_equil = ifelse(
+    is.na(sum((tree_format(sim.equilibrium) %>%
+                 filter(var == "BAsp") %>%
+                 filter(time == max(.$time) - 1))$value)), 
+    FALSE, TRUE
+  )
+  
+  # Second element of output: equilibrium state
+  list.out$equil = tree_format(sim.equilibrium) %>%
+    filter(var == "m", equil)
+  
+  # return output
+  return(list.out)
+}
+
+
+
+#' Function to simulate disturbances from forest list and equilibrium
+#' @param sim.list List of simulations to get population at equilibrium
+#' @param forest.list List of forest used to get sim.list
+#' @param disturbance.df disturbance dataframe
+make_simulation_disturbance <- function(forest, equil, disturbance.df, time.sim = 3000){
+  
+  # Verify that equilibrium is reached
+  if(equil$reached_equil){
+    
+    # Initialize the forest that will be used for the simulation
+    forest.in = forest
+    
+    # Loop on all species present in the forest
+    for(i in 1:length(names(forest$species))){
+      
+      # Name of species i
+      species.i = names(forest$species)[i]
+      
+      # Get equilibrium for species i
+      equil.i <- equil$equil %>%
+        filter(species == species.i) %>% 
+        pull(value)
+      
+      # Initiate the population at equilibrium
+      forest.in$species[[i]]$init_pop <- def_init_k(equil.i*0.03)
+      
+      # Update disturbance function
+      forest.in$species[[i]]$disturb_fun <- disturb_fun
+      
+      # Add disturbance coefficients
+      forest.in$species[[i]]$disturb_coef <- filter(matreex::disturb_coef, 
+                                                    species == species.i)
+      
+    }
+    
+    # Run simulation
+    out = sim_deter_forest(forest.in, tlim = time.sim, equil_time = time.sim,
+                           disturbance  = disturbance.df, verbose = FALSE) 
+  } else { 
+    # If equilibrium is not reached, return an empty matrix
+    out = matrix()
+  }
+  
+  
+  # Return the output list
+  return(out)
+  
+}
+
+
 
 #' Get resilience, resistance and recovery from simulations with disturbance
 #' @param sim.list.disturbed List of simulations where a disturbance occurred
 #' @param disturbance.df disturbance dataset used to generate the disturbance
-get_resilience_metrics <- function(sim.list.disturbed, disturbance.df){
+#' @param forest_list Table giving the information on each forest generated
+get_resilience_metrics <- function(sim.list.disturbed, disturbance.df, 
+                                   forest_list){
   
   # Initialize the output
-  out <- data.frame(
-    ID = c(1:length(names(sim.list.disturbed))),
-    sp.combination = names(sim.list.disturbed), 
-    resistance = NA_real_, recovery = NA_real_, resilience = NA_real_, 
-    t0 = NA_real_, thalf = NA_real_
-  )
+  out <- forest_list %>%
+    mutate(resistance = NA_real_, recovery = NA_real_, resilience = NA_real_, 
+           t0 = NA_real_, thalf = NA_real_)
   
   # Loop on all species combination
   for(i in 1:dim(out)[1]){
     
-    # Format the output
-    data.i <- tree_format(sim.list.disturbed[[i]]) %>%
-      filter(var == "BAsp") %>%
-      filter(!equil) %>%
-      group_by(time) %>%
-      summarize(BA = sum(value))
-    
-    
-    ## Calculate resistance
-    #  - Basal area at equilibrium
-    Beq.i = mean((data.i %>% filter(time < min(disturbance.df$t)))$BA)
-    # - Basal area after disturbance
-    Bdist.i = (data.i %>% filter(time == max(disturbance.df$t)+1))$BA
-    # - Resistance
-    out$resistance[i] = Beq.i/(Beq.i - Bdist.i)
-    
-    ## Calculate recovery
-    #  - Time at which population recovered fully
-    Rec.time.i = min((data.i %>% 
-                        filter(time > max(disturbance.df$t)) %>%
-                        filter(BA > Beq.i))$time)
-    # - Basal area 20 years after disturbance
-    Bdist20.i = (data.i %>% filter(time == max(disturbance.df$t)+21))$BA
-    # - Recovery = time to recover minus time of disturbance
-    #out$recovery[i] = Rec.time.i - max(disturbance.df$t)
-    out$recovery[i] = abs(Bdist20.i - Bdist.i)/20
-    
-    ## Calculate resilience
-    out$resilience[i] <- 1/sum((data.i %>%
-                                  mutate(BA0 = .[which(.$time == 1), "BA"]) %>%
-                                  mutate(diff = abs(BA - BA0)))$diff)
-    
-    ## Calculate t0
-    #  - Time at which population recovered to 5% of the basal area lost
-    Rec.0.time.i = min((data.i %>% 
+    # First, verify that equilibrium was reached
+    if(!is.na(sim.list.disturbed[[i]][1, 1])){
+      
+      # Format the output
+      data.i <- tree_format(sim.list.disturbed[[i]]) %>%
+        filter(var == "BAsp") %>%
+        filter(!equil) %>%
+        group_by(time) %>%
+        summarize(BA = sum(value))
+      
+      
+      ## Calculate resistance
+      #  - Basal area at equilibrium
+      Beq.i = mean((data.i %>% filter(time < min(disturbance.df$t)))$BA)
+      # - Basal area after disturbance
+      Bdist.i = (data.i %>% filter(time == max(disturbance.df$t)+1))$BA
+      # - Resistance
+      out$resistance[i] = Beq.i/(Beq.i - Bdist.i)
+      
+      ## Calculate recovery
+      #  - Time at which population recovered fully
+      Rec.time.i = min((data.i %>% 
                           filter(time > max(disturbance.df$t)) %>%
-                          filter(BA > (Beq.i + 19*Bdist.i)/20))$time)
-    # - Recovery = time to recover minus time of disturbance
-    out$t0[i] = Rec.0.time.i - max(disturbance.df$t)
-    
-    ## Calculate thalf
-    #  - Time at which population recovered to 50% of the basal area lost
-    Rec.half.time.i = min((data.i %>% 
-                             filter(time > max(disturbance.df$t)) %>%
-                             filter(BA > (Beq.i + Bdist.i)/2))$time)
-    # - Recovery = time to recover minus time of disturbance
-    out$thalf[i] = Rec.half.time.i - max(disturbance.df$t)
+                          filter(BA > Beq.i))$time)
+      # - Basal area 20 years after disturbance
+      Bdist20.i = (data.i %>% filter(time == max(disturbance.df$t)+21))$BA
+      # - Recovery = slope of BA increase in teh 20 years after disturbance
+      out$recovery[i] = abs(Bdist20.i - Bdist.i)/20
+      
+      ## Calculate resilience
+      out$resilience[i] <- 1/sum((data.i %>%
+                                    mutate(BA0 = .[which(.$time == 1), "BA"]) %>%
+                                    mutate(diff = abs(BA - BA0)))$diff)
+      
+      ## Calculate t0
+      #  - Time at which population recovered to 5% of the basal area lost
+      Rec.0.time.i = min((data.i %>% 
+                            filter(time > max(disturbance.df$t)) %>%
+                            filter(BA > (Beq.i + 19*Bdist.i)/20))$time)
+      # - Recovery = time to recover minus time of disturbance
+      out$t0[i] = Rec.0.time.i - max(disturbance.df$t)
+      
+      ## Calculate thalf
+      #  - Time at which population recovered to 50% of the basal area lost
+      Rec.half.time.i = min((data.i %>% 
+                               filter(time > max(disturbance.df$t)) %>%
+                               filter(BA > (Beq.i + Bdist.i)/2))$time)
+      # - Recovery = time to recover minus time of disturbance
+      out$thalf[i] = Rec.half.time.i - max(disturbance.df$t)
+      
+    }
     
   }
   
@@ -394,35 +513,35 @@ get_resilience_metrics <- function(sim.list.disturbed, disturbance.df){
   return(out)
 }
 
-
 #' Get functional diversity from simulations
+#' @param ID.forest Vector containing the ID of each forest simulated
 #' @param sim.list.disturbed List of simulations where a disturbance occured
 #' @param pc1_per_species Position of each species along the growth-mortality trade-off
-get_FD <- function(sim.list.disturbed, pc1_per_species){
+get_FD <- function(ID.forest, sim.list.disturbed, pc1_per_species){
   
   # Initialize the output
   out <- data.frame(
-    ID = c(1:length(names(sim.list.disturbed))),
-    sp.combination = names(sim.list.disturbed), 
+    ID.forest = ID.forest,
     FD = NA_real_, CWM = NA_real_)
   
   
   # Loop on all species combination
   for(i in 1:dim(out)[1]){
     
-    # Format the output
-    data.i <- tree_format(sim.list.disturbed[[i]]) %>%
-      filter(var == "BAsp") %>%
-      filter(!equil)
+    # First, verify that equilibrium was reached
+    if(!is.na(sim.list.disturbed[[i]][1, 1])){
+      # Format the output
+      data.i <- tree_format(sim.list.disturbed[[i]]) %>%
+        filter(var == "BAsp") %>%
+        filter(time == 1) %>%
+        left_join(pc1_per_species, by = "species") %>%
+        summarise(CWM = weighted.mean(pca1, w = value), 
+                  FD = weighted.var(pca1, w = value))
+      # Add to the final dataframe
+      out$CWM[i] <- data.i$CWM
+      out$FD[i] <- data.i$FD
+    }
     
-    # Calculate functional diversity and CWM at equilibrium
-    FD_CWM_i <- data.i %>%
-      filter(time == 1) %>%
-      left_join(pc1_per_species, by = "species") %>%
-      summarise(CWM = weighted.mean(pca1, w = value), 
-                FD = weighted.var(pca1, w = value))
-    out$CWM[i] <- FD_CWM_i$CWM
-    out$FD[i] <- FD_CWM_i$FD
   }
   
   # Replace NA by 0
@@ -584,7 +703,35 @@ format_resilience_FD = function(list.in){
 }
 
 
-
+#' Format data for the models
+#' @param climate list of climate objects used for the simulations
+#' @param resilience_metrics df with resilience per forest ID
+#' @param FD df with FD and CWM per forest ID
+get_data_model = function(climate, resilience_metrics, FD){
+  
+  # Build a dataset to associate ID climate with sgdd, wai and pca1
+  data.climate = data.frame(
+    ID.climate = c(1:length(names(climate))), 
+    pca1 = NA_real_, 
+    sgdd = NA_real_, 
+    wai = NA_real_
+  )
+  for(i in 1:dim(data.climate)[1]){
+    data.climate$pca1[i] = climate[[i]]$climate[7]
+    data.climate$sgdd[i] = climate[[i]]$climate[1]
+    data.climate$wai[i] = climate[[i]]$climate[2]
+  }
+  
+  # Format final dataset
+  out = resilience_metrics %>%
+    left_join(FD, by = "ID.forest") %>%
+    left_join(data.climate, by = "ID.climate") %>%
+    dplyr::select(ID.forest, ID.climate, forest.composition = combinations, 
+                  sgdd, wai, pca1, FD, CWM, resistance, recovery, resilience)
+  
+  # Return output
+  return(out)
+}
 
 
 

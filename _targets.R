@@ -73,7 +73,7 @@ list(
   
   # Generate some climates
   # -- iterations along all climates that will be created (one iteration per climate)
-  tar_target(ID.climate, c(1:2)),
+  tar_target(ID.climate, c(1:5)),
   # -- list of climates
   tar_target(climate_list, create_climate_list(length(ID.climate))),
   # -- generate one climate object per iteration with branching
@@ -81,7 +81,7 @@ list(
     climate,
     make_climate(FUNDIV_climate_species, 
                  quantiles.in = climate_list[[ID.climate]], 
-                 nsp_per_richness = 2),
+                 nsp_per_richness = 10),
     pattern = map(ID.climate), 
     iteration = "list"
   ), 
@@ -91,7 +91,7 @@ list(
   tar_target(IPM_list, make_IPM_list(climate)),
   # -- vector of IPM id
   tar_target(ID.IPM, IPM_list$ID.IPM),
-  # Fit IPMs, one per element of IPM_list
+  # -- Fit IPMs, one per element of IPM_list
   tar_target(IPMs,make_IPM(
     species = IPM_list$species[ID.IPM], 
     climate = climate[[IPM_list$ID.climate[ID.IPM]]]$climate, 
@@ -107,224 +107,61 @@ list(
   # Create species object
   tar_target(species, species(
     IPMs[[ID.IPM]], init_pop = def_initBA(20), harvest_fun = def_harv, 
-    disturb_fun = def_disturb), pattern = map(ID.IPM), iteration = "list")
-  # 
-  # # Create forest object
-  # tar_target(forest.list, generate_forest_from_combinations(
-  #   species.list[[clim.index]], harv_rules.ref, climate[[clim.index]]$combinations), 
-  #   pattern = map(clim.index), iteration = "list"), 
-  # 
-  # # Run simulation from random population to get equilibrium
-  # tar_target(sim.list, run_simulations_from_list(forest.list[[clim.index]], tlim = 4000), 
-  #            pattern = map(clim.index), iteration = "list"),
-  # 
-  # # Run simulations with disturbance starting at equilibrium
-  # tar_target(sim.list.disturbed_cold, disturb_forest.list(
-  #   sim.list[[clim.index]], forest.list[[clim.index]], disturbance.df), 
-  #   pattern = map(clim.index), iteration = "list")
-  # 
+    disturb_fun = def_disturb), pattern = map(ID.IPM), iteration = "list"), 
   
+  # Create the forests
+  # -- First, make a table indicating species combination and climate per forest
+  tar_target(forest_list, make_forest_list(climate, IPM_list)), 
+  # -- Then create a vector with forest ID for branching
+  tar_target(ID.forest, forest_list$ID.forest), 
+  # -- Finally, make one forest per ID
+  tar_target(forests, new_forest(
+    species = species[as.numeric(unlist(strsplit(forest_list$ID.IPM_code[ID.forest], "\\.")))], 
+    harv_rules = harv_rules.ref), pattern = map(ID.forest), iteration = "list"), 
+  
+  # Run simulations without disturbance to reach equilibrium 
+  tar_target(sim.equilibrium, sim_deter_forest(
+    forests[[ID.forest]], tlim = 4000, equil_time = 10000, equil_dist = 250, 
+    equil_diff = 1, harvest = "default", SurfEch = 0.03, verbose = TRUE), 
+    pattern = map(ID.forest), iteration = "list"),
+  
+  # Run simulations with disturbances
+  # -- First, get the equilibrium for each simulation and verify that it was reached
+  tar_target(equil, get_equil(sim.equilibrium[[ID.forest]]), 
+             pattern = map(ID.forest), iteration = "list"), 
+  # -- Then run simulations with disturbance from that equilibrium
+  tar_target(sim.disturbance, make_simulation_disturbance(
+    forests[[ID.forest]], equil[[ID.forest]], disturbance.df, time.sim = 3000), 
+    pattern = map(ID.forest), iteration = "list"), 
+  
+  # Extract resilience metrics
+  tar_target(resilience_metrics, get_resilience_metrics(
+    sim.disturbance, disturbance.df, forest_list)),
+
+  
+   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Make IPMs -----
+  # -- Traits -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
-  # # Make different climates before fitting IPM
-  # tar_target(climate.cold, make_climate(FUNDIV_climate_species, 
-  #                                       quantiles.in = c(0.075, 0.125))), 
-  # tar_target(climate.mid, make_climate(FUNDIV_climate_species, 
-  #                                      quantiles.in = c(0.475, 0.525))), 
-  # tar_target(climate.hot, make_climate(FUNDIV_climate_species, 
-  #                                      quantiles.in = c(0.875, 0.925))), 
-  # 
-  # 
-  # # Fit IPM for species list from cold climate
-  # tar_target(IPM.list_cold, make_IPM_multispecies(
-  #   fit.list.allspecies[climate.cold$species], climate.cold$climate, 
-  #   clim_lab.in = "cold")), 
-  # 
-  # # Fit IPM for species list from mid climate
-  # tar_target(IPM.list_mid, make_IPM_multispecies(
-  #   fit.list.allspecies[climate.mid$species], climate.mid$climate, 
-  #   clim_lab.in = "mid")), 
-  # 
-  # # Fit IPM for species list from hot climate
-  # tar_target(IPM.list_hot, make_IPM_multispecies(
-  #   fit.list.allspecies[climate.hot$species], climate.hot$climate, 
-  #   clim_lab.in = "hot")), 
-  # 
-  # 
-  # 
-  # 
-  # 
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # # -- Make simulations and extract outputs -----
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # 
-  # 
-  # ## - With cold climate
-  # 
-  # # Make species list
-  # tar_target(species.list_cold, generate_species.list(IPM.list_cold)), 
-  # # Generate forest
-  # tar_target(forest.list_cold, generate_forest_from_combinations(
-  #   species.list_cold, harv_rules.ref, climate.cold$combinations)), 
-  # # Run simulations
-  # tar_target(sim.list_cold, run_simulations_from_list(
-  #   forest.list_cold, tlim = 4000)), 
-  # # Make simulations with disturbance starting at equilibrium
-  # tar_target(sim.list.disturbed_cold, disturb_forest.list(
-  #   sim.list_cold, forest.list_cold, disturbance.df)),
-  # # Get resilience
-  # tar_target(resilience_cold, get_resilience_metrics(
-  #   sim.list.disturbed_cold, disturbance.df)),
-  # 
-  # 
-  # ## - With mid climate
-  # 
-  # # Make species list
-  # tar_target(species.list_mid, generate_species.list(IPM.list_mid)), 
-  # # Generate forest
-  # tar_target(forest.list_mid, generate_forest_from_combinations(
-  #   species.list_mid, harv_rules.ref, climate.mid$combinations)), 
-  # # Run simulations
-  # tar_target(sim.list_mid, run_simulations_from_list(
-  #   forest.list_mid, tlim = 4000)), 
-  # # Make simulations with disturbance starting at equilibrium
-  # tar_target(sim.list.disturbed_mid, disturb_forest.list(
-  #   sim.list_mid, forest.list_mid, disturbance.df)),
-  # # Get resilience
-  # tar_target(resilience_mid, get_resilience_metrics(
-  #   sim.list.disturbed_mid, disturbance.df)),
-  # 
-  # 
-  # ## - With hot climate
-  # 
-  # # Make species list
-  # tar_target(species.list_hot, generate_species.list(IPM.list_hot)), 
-  # # Generate forest
-  # tar_target(forest.list_hot, generate_forest_from_combinations(
-  #   species.list_hot, harv_rules.ref, climate.hot$combinations)), 
-  # # Run simulations
-  # tar_target(sim.list_hot, run_simulations_from_list(
-  #   forest.list_hot, tlim = 4000)), 
-  # # Make simulations with disturbance starting at equilibrium
-  # tar_target(sim.list.disturbed_hot, disturb_forest.list(
-  #   sim.list_hot, forest.list_hot, disturbance.df)),
-  # # Get resilience
-  # tar_target(resilience_hot, get_resilience_metrics(
-  #   sim.list.disturbed_hot, disturbance.df)),
-  # 
-  # 
-  # 
-  # 
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # # -- Traits -----
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # 
-  # # Traits data file
-  # tar_target(traits_file, "data/traits.csv", format = "file"),
-  # 
-  # # Read traits data
-  # tar_target(traits, fread(traits_file)),
-  # 
-  # # Get coordinates in the first pca axis per species
-  # tar_target(pc1_per_species, get_pc1_per_species(traits)),
-  # 
-  # # Extract functional diversity of species combinations in each climate
-  # tar_target(FD_cold, get_FD(sim.list.disturbed_cold, pc1_per_species)),
-  # tar_target(FD_mid, get_FD(sim.list.disturbed_mid, pc1_per_species)),
-  # tar_target(FD_hot, get_FD(sim.list.disturbed_hot, pc1_per_species)),
-  # 
-  # # Format resilience and functional diversity data from different climates
-  # tar_target(data_models, format_resilience_FD(
-  #   list.in = list(cold = list(resilience = resilience_cold, FD = FD_cold), 
-  #                  mid = list(resilience = resilience_mid, FD = FD_mid), 
-  #                  hot = list(resilience = resilience_hot, FD = FD_hot))
-  # )), 
-  # 
-  # 
-  # 
-  # 
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # # -- Plots -----
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # 
-  # 
-  # # Plot the co-variation between traits
-  # tar_target(fig_traits_pca, plot_traits_pca(traits, "output/fig_traits.jpg"), 
-  #            format = "file"),
-  # 
-  # # Plot the pca of sgdd and wai and the different climate selected
-  # tar_target(fig_pca_climate, plot_pca_climate(FUNDIV_climate_species, climate.list = list(
-  #   cold = c(0.075, 0.125),  mid = c(0.475, 0.525), hot = c(0.875, 0.925)), 
-  #   file.in = "output/pca_climate.jpg"), format = "file"),
-  # 
-  # # Plot the effect of community weighted mean on resilience metrics
-  # tar_target(fig_resilience_vs_CWM, plot_resilience_vs_CMW(
-  #   data_models, "output/analyses/fig_resilience_vs_CWM.jpg"), format = "file"),
-  # 
-  # # Plot the effect of climate on resilience
-  # tar_target(fig_resilience_vs_climate, plot_resilience_vs_climate(
-  #   data_models, "output/analyses/fig_resilience_vs_climate.jpg"), format = "file"),
-  # 
-  # # Plot the effect of functional diversity on resilience
-  # tar_target(fig_resilience_vs_FD, plot_resilience_vs_FD(
-  #   data_models, "output/analyses/fig_resilience_vs_FD.jpg"), format = "file"),
-  # 
-  # # Plot combined effect of CWM and FD on resilience metrics
-  # # -- all climates
-  # tar_target(fig_res_vs_fd_and_cwm_all, plot_resilience_vs_CMW_and_FD(
-  #   data_models, "output/analyses/fig_res_vs_fd_and_cwm_all.jpg"), 
-  #   format = "file"),
-  # # -- cold climate
-  # tar_target(fig_res_vs_fd_and_cwm_cold, plot_resilience_vs_CMW_and_FD(
-  #   subset(data_models, climate == "cold"), "output/analyses/fig_res_vs_fd_and_cwm_cold.jpg"), 
-  #   format = "file"),
-  # # -- mid climate
-  # tar_target(fig_res_vs_fd_and_cwm_mid, plot_resilience_vs_CMW_and_FD(
-  #   subset(data_models, climate == "mid"), "output/analyses/fig_res_vs_fd_and_cwm_mid.jpg"), 
-  #   format = "file"),
-  # # -- hot climate
-  # tar_target(fig_res_vs_fd_and_cwm_hot, plot_resilience_vs_CMW_and_FD(
-  #   subset(data_models, climate == "hot"), "output/analyses/fig_res_vs_fd_and_cwm_hot.jpg"), 
-  #   format = "file"),
-  # 
-  # ## -- Simulations with cold climate
-  # 
-  # # Plot the list of simulations generated (no disturbance so far)
-  # tar_target(fig_sim.list_cold, plot_sim.list(
-  #   sim.list_cold, "output/cold/fig_sim_nodist_cold.jpg"), 
-  #   format = "file"), 
-  # # Plot the list of simulations disturbed
-  # tar_target(fig_sim.list.disturbed_cold, plot_sim.list(
-  #   sim.list.disturbed_cold, "output/cold/fig_sim_dist_cold.jpg"), 
-  #   format = "file"),
-  # 
-  # 
-  # 
-  # ## -- Simulations with mid climate
-  # 
-  # # Plot the list of simulations generated (no disturbance so far)
-  # tar_target(fig_sim.list_mid, plot_sim.list(
-  #   sim.list_mid, "output/mid/fig_sim_nodist_mid.jpg"), 
-  #   format = "file"), 
-  # # Plot the list of simulations disturbed
-  # tar_target(fig_sim.list.disturbed_mid, plot_sim.list(
-  #   sim.list.disturbed_mid, "output/mid/fig_sim_dist_mid.jpg"), 
-  #   format = "file"),
-  # 
-  # 
-  # 
-  # ## -- Simulations with hot climate
-  # 
-  # # Plot the list of simulations generated (no disturbance so far)
-  # tar_target(fig_sim.list_hot, plot_sim.list(
-  #   sim.list_hot, "output/hot/fig_sim_nodist_hot.jpg"), 
-  #   format = "file"), 
-  # # Plot the list of simulations disturbed
-  # tar_target(fig_sim.list.disturbed_hot, plot_sim.list(
-  #   sim.list.disturbed_hot, "output/hot/fig_sim_dist_hot.jpg"), 
-  #   format = "file")
+  # Traits data file
+  tar_target(traits_file, "data/traits.csv", format = "file"),
+  
+  # Read traits data
+  tar_target(traits, fread(traits_file)),
+   
+  # Get coordinates in the first pca axis per species
+  tar_target(pc1_per_species, get_pc1_per_species(traits)),
+   
+  # Extract functional diversity and cwm per forest simulated
+  tar_target(FD, get_FD(ID.forest, sim.disturbance, pc1_per_species)), 
+  
+  # Format data before running the models
+  tar_target(data_models, get_data_model(climate, resilience_metrics, FD))
+  
+  
+
+ 
   
 )
 
