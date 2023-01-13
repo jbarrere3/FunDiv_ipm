@@ -27,7 +27,8 @@ packages.in <- c("dplyr", "ggplot2", "matreex", "tidyr", "data.table",
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
-tar_option_set(packages = packages.in)
+tar_option_set(packages = packages.in,
+               memory = "transient")
 set.seed(2)
 
 
@@ -72,45 +73,56 @@ list(
   
   # Generate some climates
   # -- iterations along all climates that will be created (one iteration per climate)
-  tar_target(clim.index, c(1:5)),
+  tar_target(ID.climate, c(1:2)),
   # -- list of climates
-  tar_target(climate_list, create_climate_list(length(clim.index))),
+  tar_target(climate_list, create_climate_list(length(ID.climate))),
   # -- generate one climate object per iteration with branching
   tar_target(
     climate,
     make_climate(FUNDIV_climate_species, 
-                 quantiles.in = climate_list[[clim.index]], 
-                 nsp_per_richness = 10),
-    pattern = map(clim.index), 
+                 quantiles.in = climate_list[[ID.climate]], 
+                 nsp_per_richness = 2),
+    pattern = map(ID.climate), 
     iteration = "list"
   ), 
   
-  # Fit IPMs, one list per climate
-  tar_target(IPM.list, make_IPM_multispecies(
-    fit.list.allspecies[climate[[clim.index]]$species], 
-    climate[[clim.index]]$climate, 
-    clim_lab.in = names(climate_list)[clim.index]),
-  pattern = map(clim.index), 
-  iteration = "list"), 
+  # Make IPM
+  # -- generate a list of IPM
+  tar_target(IPM_list, make_IPM_list(climate)),
+  # -- vector of IPM id
+  tar_target(ID.IPM, IPM_list$ID.IPM),
+  # Fit IPMs, one per element of IPM_list
+  tar_target(IPMs,make_IPM(
+    species = IPM_list$species[ID.IPM], 
+    climate = climate[[IPM_list$ID.climate[ID.IPM]]]$climate, 
+    fit =  fit.list.allspecies[[IPM_list$species[ID.IPM]]],
+    clim_lab = as.character(IPM_list$ID.climate[ID.IPM]),
+    mesh = c(m = 700, L = 100, U = as.numeric(
+      fit.list.allspecies[[IPM_list$species[ID.IPM]]]$info[["max_dbh"]]) * 1.1),
+    BA = 0:200, verbose = TRUE
+  ),
+  pattern = map(ID.IPM), 
+  iteration = "list"),
   
   # Create species object
-  tar_target(species.list, generate_species.list(IPM.list[[clim.index]]), 
-             pattern = map(clim.index), iteration = "list"), 
-  
-  # Create forest object
-  tar_target(forest.list, generate_forest_from_combinations(
-    species.list[[clim.index]], harv_rules.ref, climate[[clim.index]]$combinations), 
-    pattern = map(clim.index), iteration = "list"), 
-  
-  # Run simulation from random population to get equilibrium
-  tar_target(sim.list, run_simulations_from_list(forest.list[[clim.index]], tlim = 4000), 
-             pattern = map(clim.index), iteration = "list"),
-  
-  # Run simulations with disturbance starting at equilibrium
-  tar_target(sim.list.disturbed_cold, disturb_forest.list(
-    sim.list[[clim.index]], forest.list[[clim.index]], disturbance.df), 
-    pattern = map(clim.index), iteration = "list")
-  
+  tar_target(species, species(
+    IPMs[[ID.IPM]], init_pop = def_initBA(20), harvest_fun = def_harv, 
+    disturb_fun = def_disturb), pattern = map(ID.IPM), iteration = "list")
+  # 
+  # # Create forest object
+  # tar_target(forest.list, generate_forest_from_combinations(
+  #   species.list[[clim.index]], harv_rules.ref, climate[[clim.index]]$combinations), 
+  #   pattern = map(clim.index), iteration = "list"), 
+  # 
+  # # Run simulation from random population to get equilibrium
+  # tar_target(sim.list, run_simulations_from_list(forest.list[[clim.index]], tlim = 4000), 
+  #            pattern = map(clim.index), iteration = "list"),
+  # 
+  # # Run simulations with disturbance starting at equilibrium
+  # tar_target(sim.list.disturbed_cold, disturb_forest.list(
+  #   sim.list[[clim.index]], forest.list[[clim.index]], disturbance.df), 
+  #   pattern = map(clim.index), iteration = "list")
+  # 
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Make IPMs -----

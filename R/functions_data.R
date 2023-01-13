@@ -84,6 +84,34 @@ load_and_format_climate_ipm <- function(species.name, N.ref = 2){
 }
 
 
+#' Function to create a list of IPM to run
+#' @param climate list of climate objects
+make_IPM_list = function(climate){
+  
+  # Loop on all climates
+  for(i in 1:length(names(climate))){
+    # Dataframe for climate i
+    out.i = data.frame(
+      ID.climate = i, 
+      species = climate[[i]]$species
+    )
+    
+    # Add to final dataset
+    if(i == 1) out = out.i
+    else out = rbind(out, out.i)
+    
+  }
+  
+  # Final formatting
+  out = out %>%
+    mutate(ID.IPM = c(1:dim(.)[1])) %>%
+    dplyr::select(ID.IPM, ID.climate, species)
+  
+  # Return output
+  return(out)
+  
+}
+
 
 #' Fit IPM for several species and one climate
 #' @param fit.list List containing the demographic parameters of each species

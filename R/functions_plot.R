@@ -279,18 +279,18 @@ map_climates = function(FUNDIV_climate_species, climate.list, file.in){
   plot.out <- ne_countries(scale = "medium", returnclass = "sf") %>%
     ggplot(aes(geometry = geometry)) +
     geom_sf(fill = "#343A40", color = "gray", show.legend = F, size = 0.2) + 
-    geom_sf(data = data.in, aes(color = climate, size = climate)) +
-    scale_color_manual(values = c("gray", colorRampPalette(c("blue", "red"))(length(names(climate.list))))) +
-    scale_size_manual(values = c(0.01, rep(0.5, length(names(climate.list))))) +
+    geom_sf(data = (data.in %>% filter(climate != "none")), 
+            aes(color = climate), size = 0.01, alpha = 0.7) +
+    scale_color_manual(
+      values = colorRampPalette(c("blue", "red"))(length(names(climate.list)))) +
     coord_sf(xlim = c(-10, 32), ylim = c(36, 71)) +
     theme(panel.background = element_rect(color = 'black', fill = 'white'), 
           panel.grid = element_blank(),
           legend.title = element_blank(),
-          legend.key = element_blank(), 
-          legend.position = c(0.15, 0.85))
+          legend.key = element_blank())
   
   # Save the plot
-  ggsave(file.in, plot.out, width = 10, height = 14, 
+  ggsave(file.in, plot.out, width = 14, height = 14, 
          units = "cm", dpi = 600, bg = "white")
   
   # Return the name of the file
