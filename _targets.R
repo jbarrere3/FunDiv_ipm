@@ -77,20 +77,25 @@ list(
   # -- list of climates
   tar_target(climate_list, create_climate_list(length(ID.climate))),
   # -- generate one climate object per iteration with branching
-  tar_target(
-    climate,
-    make_climate(FUNDIV_climate_species, 
-                 quantiles.in = climate_list[[ID.climate]], 
-                 nsp_per_richness = 10),
-    pattern = map(ID.climate), 
-    iteration = "list"
-  ), 
+  tar_target(climate, make_climate(
+      FUNDIV_climate_species, quantiles.in = climate_list[[ID.climate]], 
+      nsp_per_richness = 10), pattern = map(ID.climate), iteration = "list"), 
   
-  # Make species list
-  tar_target(species.list, make_species.list_per_climate(
-    fit.list.allspecies, climate[[ID.climate]], names(climate_list)[ID.climate]), 
-    pattern = map(ID.climate), iteration = "list"),
+  # Make species objects
+  # -- First: list all species object to make
+  tar_target(species_list, make_species_list(climate)),
+  # -- Make a vector of ID for each species to make
+  tar_target(ID.species, species_list$ID.species), 
+  # -- Make the species via branching over ID.species
+  tar_target(species, make_species_rds(
+    fit.list.allspecies, climate, species_list, ID.species.in = ID.species), 
+    pattern = map(ID.species), iteration = "vector", format = "file"),
   
+  # Make simulations to reach equilibrium
+  # -- Start with a list of forest to simulate
+  tar_target(forest_list, make_forest_list(climate)), 
+  # -- Make a vector of ID for each forest to simulate
+  tar_target(ID.forest, forest_list$ID.forest),
   # # Make IPM
   # # -- generate a list of IPM
   # tar_target(IPM_list, make_IPM_list(climate)),

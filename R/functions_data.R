@@ -86,7 +86,7 @@ load_and_format_climate_ipm <- function(species.name, N.ref = 2){
 
 #' Function to create a list of IPM to run
 #' @param climate list of climate objects
-make_IPM_list = function(climate){
+make_species_list = function(climate){
   
   # Loop on all climates
   for(i in 1:length(names(climate))){
@@ -94,7 +94,9 @@ make_IPM_list = function(climate){
     out.i = data.frame(
       ID.climate = i, 
       species = climate[[i]]$species
-    )
+    ) %>%
+      mutate(
+        file = paste0("rds/climate_", ID.climate, "/species/", species, ".rds"))
     
     # Add to final dataset
     if(i == 1) out = out.i
@@ -104,8 +106,8 @@ make_IPM_list = function(climate){
   
   # Final formatting
   out = out %>%
-    mutate(ID.IPM = c(1:dim(.)[1])) %>%
-    dplyr::select(ID.IPM, ID.climate, species)
+    mutate(ID.species = c(1:dim(.)[1])) %>%
+    dplyr::select(ID.species, ID.climate, species, file)
   
   # Return output
   return(out)
@@ -113,195 +115,56 @@ make_IPM_list = function(climate){
 }
 
 
-#' Fit IPM for several species and one climate
-#' @param fit.list List containing the demographic parameters of each species
-#' @param climate.ref Climate to use for each fit of the IPM
-#' @param clim_lab.in Name of the reference climate
-#' @param mesh.m numeric indicating the mesh size
-#' @param mesh.L numeric indicating the lower bound of size
-#' @param BA.max maximum basal area for the integration
-make_IPM_multispecies <- function(fit.list, climate.ref, clim_lab.in, 
-                                  mesh.m = 700, mesh.L = 100, BA.max = 200){
-  
-  # Identify the species names
-  species.names <- names(fit.list)
-  
-  # Initialize the list of IPM
-  IPM.list <- list()
-  
-  # Loop on all species
-  for(i in 1:length(species.names)){
-    # Print the species 
-    print(paste0("fit IPM for species ", i, "/", length(species.names), " : ", gsub("\\_", "\\ ", species.names[i])))
-    # Make the IPM
-    ipm.i <- make_IPM(
-      species = species.names[i], climate = climate.ref, fit =  fit.list[[i]],
-      clim_lab = clim_lab.in,
-      mesh = c(m = mesh.m, L = mesh.L, U = as.numeric(fit.list[[i]]$info[["max_dbh"]]) * 1.1),
-      BA = 0:BA.max, verbose = TRUE
-    )
-    # Add to the list
-    eval(parse(text=paste0("IPM.list$", species.names[i], " <- ipm.i")))
-  }
-  
-  # Return the list generated
-  return(IPM.list)
-}
-
-#' Function to generate a species list from a given climate object
+#' Function to make a species object, save it as rds and return filename
 #' @param fit.list.allspecies demographic parameter for all species
 #' @param climate.in object created by the function make climate
-#' @param climate.lab.in name of the climate
-make_species.list_per_climate = function(
-  fit.list.allspecies, climate.in, climate.lab.in){
+#' @param species_list table containing all species to create
+#' @param ID.species.in ID of the species to make in species_list
+make_species_rds = function(
+  fit.list.allspecies, climate, species_list, ID.species.in){
   
-  # Initialize output list
-  list.out <- vector("list", length(climate.in$species))
-  names(list.out) = climate.in$species
+  # Make IPM
+  IPM.in = make_IPM(
+    species = species_list$species[ID.species.in], 
+    climate = climate[[species_list$ID.climate[ID.species.in]]]$climate, 
+    fit =  fit.list.allspecies[[species_list$species[ID.species.in]]],
+    clim_lab = paste0("climate_", species_list$ID.climate[ID.species.in]),
+    mesh = c(m = 700, L = 100, U = as.numeric(
+      fit.list.allspecies[[species_list$species[ID.species.in]]]$info[["max_dbh"]]) * 1.1),
+    BA = 0:200, verbose = TRUE
+  )
   
-  # Loop on all species
-  for(i in 1:length(climate.in$species)){
-    
-    # Name of species i
-    species.i = climate.in$species[i]
-    
-    # Make IPM
-    IPM.i = make_IPM(
-      species = species.i, climate = climate.in$climate, 
-      fit =  fit.list.allspecies[[species.i]],
-      clim_lab = climate.lab.in,
-      mesh = c(m = 700, L = 100, U = as.numeric(
-        fit.list.allspecies[[climate.in$species[i]]]$info[["max_dbh"]]) * 1.1),
-      BA = 0:200, verbose = TRUE
-    )
-    
-    # Create species object and store it in the list
-    list.out[[i]] = species(
-      IPM.i, init_pop = def_initBA(20), harvest_fun = def_harv, disturb_fun = def_disturb)
-    
-  }
+  # Create species object 
+  species.in = species(
+    IPM.in, init_pop = def_initBA(20), harvest_fun = def_harv, disturb_fun = def_disturb)
+  
+  # Save species object in a rdata
+  create_dir_if_needed(species_list$file[ID.species.in])
+  saveRDS(species.in, species_list$file[ID.species.in])
   
   # Return output list
-  return(list.out)
+  return(species_list$file[ID.species.in])
   
 }
 
-#' Generate a list of species object from the list of IPM
-#' @param IPM.list list of fitted IPM
-#' @param f.init Function to initialize basal area
-generate_species.list <- function(IPM.list, f.init = def_initBA(20)){
-  
-  # Names of the species
-  species.names <- names(IPM.list)
-  
-  # Initialize the list of species
-  species.list <- list()
-  
-  # Loop on all IPM (and thus on all species)
-  for(i in 1:length(species.names)){
-    # Generate species object for species i
-    species.i <- species(IPM.list[[i]], init_pop = f.init,
-                         harvest_fun = def_harv, disturb_fun = def_disturb)
-    # Add it to the list
-    eval(parse(text=paste0("species.list$", species.names[i], " <- species.i")))
-  }
-  
-  # Return the output list
-  return(species.list)
-}
 
-
-
-#' Function to run simulations for a list of forests
-#' @param forest.list List of forest objects
-#' @param tlim Number of simulation iterations (in years)
-#' @param targetBA basal area targetted by the harvest module (in m2)
-#' @param SurfEch Sampled area in ha
-run_simulations_from_list <- function(forest.list, tlim = 2000, targetBA = 40, 
-                                      SurfEch = 0.03){
-  
-  # Initialize output list
-  list.out <- list()
-  
-  # Loop on all forests in the list
-  for(i in 1:length(names(forest.list))){
-    
-    # Printer
-    print(paste0("Running simulation ", i, "/", length(names(forest.list)), 
-                 " - : ", gsub("\\.", "\\ and\\ ", names(forest.list)[i])))
-    
-    # Run simulation without harvest
-    sim.i <- sim_deter_forest(
-      forest.list[[i]], tlim = tlim, equil_time = tlim*3, equil_dist = 250, 
-      equil_diff = 1, harvest = "default", SurfEch = SurfEch, verbose = FALSE
-    )
-    
-    # Add simulation to the output list
-    eval(parse(text=paste0("list.out$", names(forest.list)[i], " <- sim.i")))
-    
-  }
-  
-  # Return the output list
-  return(list.out)
-}
-
-
-
-
-
-
-#' Generate a list of forest for a specific climate 
-#' @param species.list List of species objects
-#' @param harv_rules.ref List of rules for harvesting
-#' @param sp.combinations Vector of species combinations for the forest
-generate_forest_from_combinations <- function(
-  species.list, harv_rules.ref, sp.combinations){
-  
-  # Initialize forest list
-  list.out <- list()
-  
-  # Loop on all species combinations
-  for(i in 1:length(sp.combinations)){
-    
-    # Vector of species combination i 
-    species.i <- unlist(strsplit(sp.combinations[i], "\\."))
-    
-    # Generate forest i
-    forest.i <- new_forest(species = species.list[species.i], harv_rules = harv_rules.ref)
-    
-    # Add forest i to the output list
-    eval(parse(text=paste0("list.out$", sp.combinations[i], " <- forest.i")))
-  }
-  
-  # Return the output list
-  return(list.out)
-}
-
-
-#' Function to create a list of forest to create
+#' Function to create a list of forest for the simulations
 #' @param climate list of climate objects
-#' 
-make_forest_list = function(climate, IPM_list){
+make_forest_list = function(climate){
   
   # Loop on all climates
   for(i in 1:length(names(climate))){
     # Dataframe for climate i
     out.i = data.frame(
       ID.climate = i, 
-      combinations = climate[[i]]$combinations, 
-      ID.IPM_code = NA_character_
-    )
+      combination = climate[[i]]$combinations
+    ) %>%
+      mutate(
+        file.sim.equil = paste0(
+          "rds/climate_", ID.climate, "/sim_equilibrium/", combination, ".rds"), 
+        file.sim.dist = paste0(
+          "rds/climate_", ID.climate, "/sim_disturbance/", combination, ".rds"))
     
-    # Loop on all combination top extract the ipm id of each combination
-    for(j in 1:dim(out.i)[1]){
-      # Species of combination j
-      species.j = unlist(strsplit(out.i$combinations[j], "\\."))
-      # Identify the corresponding ID.IPM
-      ID.IPM.j = (data.frame(species = species.j, ID.climate = i) %>%
-                    left_join(IPM_list, by = c("species", "ID.climate")))$ID.IPM
-      # Merge these ID in a code
-      out.i$ID.IPM_code[j] = paste(ID.IPM.j, collapse = ".")
-    }
     # Add to final dataset
     if(i == 1) out = out.i
     else out = rbind(out, out.i)
@@ -311,94 +174,13 @@ make_forest_list = function(climate, IPM_list){
   # Final formatting
   out = out %>%
     mutate(ID.forest = c(1:dim(.)[1])) %>%
-    dplyr::select(ID.forest, ID.climate, combinations, ID.IPM_code)
+    dplyr::select(ID.forest, ID.climate, combination, file.sim.equil, file.sim.dist)
   
   # Return output
   return(out)
   
 }
 
-
-
-#' Function to simulate disturbances from forest list and equilibrium
-#' @param sim.list List of simulations to get population at equilibrium
-#' @param forest.list List of forest used to get sim.list
-#' @param disturbance.df disturbance dataframe
-disturb_forest.list <- function(sim.list, forest.list, disturbance.df){
-  # Initiate the output list
-  list.out <- sim.list
-  
-  # Timing for the simulations with disturbance
-  time.sim  <- max(tree_format(sim.list[[1]])$time, na.rm = TRUE) + max(disturbance.df$t)
-  
-  # Initialize the simulations to keep in the final list
-  sim_to_keep = c()
-  
-  # Loop on all simulations
-  for(i in 1:length(names(sim.list))){
-    
-    # Printer
-    print(paste0("Running simulation ", i, "/", length(names(forest.list)), 
-                 " - : ", gsub("\\.", "\\ and\\ ", names(forest.list)[i])))
-    
-    
-    # Calculate basal area at equilibrium to check for NA
-    BAeq.i = sum((tree_format(sim.list[[i]]) %>%
-                    filter(var == "BAsp") %>%
-                    filter(time == max(.$time) - 1))$value)
-    
-    # Check that the simulation went well (no NA at equilibrium)
-    if(!is.na(BAeq.i)){
-      
-      # Identify the species present in simulation i
-      species.in.i <- unlist(strsplit(names(sim.list)[i], "\\."))
-      
-      # Initiate population 
-      forest.in.i <- forest.list[[i]]
-      
-      # Formatted output of the simulation i
-      memor.i <- tree_format(sim.list[[i]])
-      
-      # Loop on all species to update the forest
-      for(j in 1:length(species.in.i)){
-        
-        # Get equilibrium for species i
-        equil.j <- memor.i %>%
-          filter(var == "m", equil, species == species.in.i[j]) %>% 
-          pull(value)
-        
-        # Initiate the population at equilibrium
-        forest.in.i$species[[j]]$init_pop <- def_init_k(equil.j*0.03)
-        
-        # Update disturbance function
-        forest.in.i$species[[j]]$disturb_fun <- disturb_fun
-        
-        # Add disturbance coefficients
-        forest.in.i$species[[j]]$disturb_coef <- filter(matreex::disturb_coef, 
-                                                        species == species.in.i[j])
-        
-      }
-      
-      
-      # Simulate disturbance and add to the output list
-      list.out[[i]] <- sim_deter_forest(forest.in.i, tlim = time.sim,
-                                        equil_dist = time.sim, equil_time = time.sim,
-                                        disturbance  = disturbance.df, verbose = FALSE) 
-      
-      # We keep the simulation i
-      sim_to_keep = c(sim_to_keep, i)
-      
-    } 
-    
-  }
-  
-  # Only keep the simulations for which there was no NA at equilibrium
-  list.out = list.out[sim_to_keep]
-  
-  # Return the output list
-  return(list.out)
-  
-}
 
 #' Function to get for each simulation the equilibrium 
 #' @param sim.equilibrium list of simulations until the equilibrium
