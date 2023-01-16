@@ -148,7 +148,43 @@ make_IPM_multispecies <- function(fit.list, climate.ref, clim_lab.in,
   return(IPM.list)
 }
 
-
+#' Function to generate a species list from a given climate object
+#' @param fit.list.allspecies demographic parameter for all species
+#' @param climate.in object created by the function make climate
+#' @param climate.lab.in name of the climate
+make_species.list_per_climate = function(
+  fit.list.allspecies, climate.in, climate.lab.in){
+  
+  # Initialize output list
+  list.out <- vector("list", length(climate.in$species))
+  names(list.out) = climate.in$species
+  
+  # Loop on all species
+  for(i in 1:length(climate.in$species)){
+    
+    # Name of species i
+    species.i = climate.in$species[i]
+    
+    # Make IPM
+    IPM.i = make_IPM(
+      species = species.i, climate = climate.in$climate, 
+      fit =  fit.list.allspecies[[species.i]],
+      clim_lab = climate.lab.in,
+      mesh = c(m = 700, L = 100, U = as.numeric(
+        fit.list.allspecies[[climate.in$species[i]]]$info[["max_dbh"]]) * 1.1),
+      BA = 0:200, verbose = TRUE
+    )
+    
+    # Create species object and store it in the list
+    list.out[[i]] = species(
+      IPM.i, init_pop = def_initBA(20), harvest_fun = def_harv, disturb_fun = def_disturb)
+    
+  }
+  
+  # Return output list
+  return(list.out)
+  
+}
 
 #' Generate a list of species object from the list of IPM
 #' @param IPM.list list of fitted IPM

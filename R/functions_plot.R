@@ -511,12 +511,12 @@ plot_resilience_vs_climate = function(data_models, file.in){
     filter(resistance > 0) %>%
     gather(key = "variable", value = "value",  
            "resistance", "resilience", "recovery") %>%
-    mutate(climate = factor(climate, levels = unique(.$climate))) %>%
+    mutate(ID.climate = factor(ID.climate, levels = unique(.$ID.climate))) %>%
     filter(is.finite(value))
   
   
   
-  # Initialize list of plots and of models
+  # Initialize list of plots
   list_plots = list()
   
   # Loop on all variables tested
@@ -526,7 +526,7 @@ plot_resilience_vs_climate = function(data_models, file.in){
     var.i = unique(data.in$variable)[i]
     
     # Make model
-    mod.i = aov(log(value) ~ climate, 
+    mod.i = aov(log(value) ~ ID.climate, 
                 data = subset(data.in, variable == var.i))
     
     # Data for plotting
@@ -537,26 +537,36 @@ plot_resilience_vs_climate = function(data_models, file.in){
     # Data with the significance letters
     data.labels.i = data.i %>%
       # Calculate the 75% quantile
-      group_by(climate) %>%
+      group_by(pca1) %>%
       summarize(label.pos = max(value)) %>%
       # Add 10% of max value 
-      mutate(label.pos = label.pos + 0.2*max(data.i$value)) %>%
+      mutate(label.pos = label.pos + 0.2*quantile(data.i$value, 0.975)) %>%
       left_join(
         data.frame(
-          climate = unique(data.in$climate), 
-          label = as.character(cld(glht(mod.i, linfct=mcp(climate="Tukey")))$mcletters$Letters)
+          pca1 = unique(data.in$pca1), 
+          label = as.character(cld(glht(mod.i, linfct=mcp(ID.climate="Tukey")))$mcletters$Letters)
         ), 
-        by = "climate") 
+        by = "pca1") 
     
     # Make plot i
     plot.i = data.i %>%
-      ggplot(aes(x = climate, y = value, fill = climate)) + 
-      geom_boxplot(alpha = 0.6) + 
+      mutate(value.log = log(value)) %>%
+      group_by(ID.climate, pca1) %>%
+      summarize(mean.log = mean(value.log, na.rm = TRUE), 
+                lwr.log = quantile(value.log, 0.025), 
+                upr.log = quantile(value.log, 0.975)) %>%
+      mutate(climate = paste0("climate.", ID.climate), 
+             value = exp(mean.log), 
+             lwr = exp(lwr.log), 
+             upr = exp(upr.log)) %>%
+      ggplot(aes(x = pca1, y = value, fill = climate)) +
+      geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0) +
+      geom_point(shape = 21, color = "black") + 
       scale_fill_manual(
-        values = colorRampPalette(c("blue", "red"))(length(unique(data.in$climate)))) + 
-      geom_dotplot(binaxis='y', stackdir='center', dotsize=0.8) + 
-      geom_text(data = data.labels.i, aes(label = label, y = label.pos), 
-                size = 6) + 
+        values = colorRampPalette(c("blue", "red"))(length(unique(data.in$ID.climate)))) + 
+      geom_text(data = (data.labels.i %>% mutate(climate = NA)),
+                aes(label = label, y = label.pos), 
+                size = 6, color = "black") + 
       xlab("CLIMATE") + ylab(toupper(var.i)) + 
       ggtitle(paste0(
         "F = ", round(as.numeric(summary(mod.i)[[1]][["F value"]][1]), digits = 1), 
