@@ -64,311 +64,6 @@ load_param_demo <- function(species.names){
   
 }
 
-#' Function to load species climate data and format it as input for the IPM
-#' @param species.name Name of the species foor which to load climate (Genus_species format)
-#' @param N.ref Integer specifying whether to keep species cold margin (1), optimum (2) or hot margin (3)
-load_and_format_climate_ipm <- function(species.name, N.ref = 2){
-  
-  # Load the data
-  data("climate_species")
-  
-  # Format to fit IPM 
-  out  <- drop(as.matrix(
-    climate_species %>%
-      filter(N == N.ref & sp == species.name) %>%
-      dplyr::select(-sp)
-  )) 
-  
-  # Return formatted vector
-  return(out)
-}
-
-
-#' Function to create a list of IPM to run
-#' @param climate list of climate objects
-make_species_list = function(climate){
-  
-  # Loop on all climates
-  for(i in 1:length(names(climate))){
-    # Dataframe for climate i
-    out.i = data.frame(
-      ID.climate = i, 
-      species = climate[[i]]$species
-    ) %>%
-      mutate(
-        file = paste0("rds/climate_", ID.climate, "/species/", species, ".rds"))
-    
-    # Add to final dataset
-    if(i == 1) out = out.i
-    else out = rbind(out, out.i)
-    
-  }
-  
-  # Final formatting
-  out = out %>%
-    mutate(ID.species = c(1:dim(.)[1])) %>%
-    dplyr::select(ID.species, ID.climate, species, file)
-  
-  # Return output
-  return(out)
-  
-}
-
-
-#' Function to make a species object, save it as rds and return filename
-#' @param fit.list.allspecies demographic parameter for all species
-#' @param climate.in object created by the function make climate
-#' @param species_list table containing all species to create
-#' @param ID.species.in ID of the species to make in species_list
-make_species_rds = function(
-  fit.list.allspecies, climate, species_list, ID.species.in){
-  
-  # Make IPM
-  IPM.in = make_IPM(
-    species = species_list$species[ID.species.in], 
-    climate = climate[[species_list$ID.climate[ID.species.in]]]$climate, 
-    fit =  fit.list.allspecies[[species_list$species[ID.species.in]]],
-    clim_lab = paste0("climate_", species_list$ID.climate[ID.species.in]),
-    mesh = c(m = 700, L = 100, U = as.numeric(
-      fit.list.allspecies[[species_list$species[ID.species.in]]]$info[["max_dbh"]]) * 1.1),
-    BA = 0:200, verbose = TRUE
-  )
-  
-  # Create species object 
-  species.in = species(
-    IPM.in, init_pop = def_initBA(20), harvest_fun = def_harv, disturb_fun = def_disturb)
-  
-  # Save species object in a rdata
-  create_dir_if_needed(species_list$file[ID.species.in])
-  saveRDS(species.in, species_list$file[ID.species.in])
-  
-  # Return output list
-  return(species_list$file[ID.species.in])
-  
-}
-
-
-#' Function to create a list of forest for the simulations
-#' @param climate list of climate objects
-make_forest_list = function(climate){
-  
-  # Loop on all climates
-  for(i in 1:length(names(climate))){
-    # Dataframe for climate i
-    out.i = data.frame(
-      ID.climate = i, 
-      combination = climate[[i]]$combinations
-    ) %>%
-      mutate(
-        file.sim.equil = paste0(
-          "rds/climate_", ID.climate, "/sim_equilibrium/", combination, ".rds"), 
-        file.sim.dist = paste0(
-          "rds/climate_", ID.climate, "/sim_disturbance/", combination, ".rds"))
-    
-    # Add to final dataset
-    if(i == 1) out = out.i
-    else out = rbind(out, out.i)
-    
-  }
-  
-  # Final formatting
-  out = out %>%
-    mutate(ID.forest = c(1:dim(.)[1])) %>%
-    dplyr::select(ID.forest, ID.climate, combination, file.sim.equil, file.sim.dist)
-  
-  # Return output
-  return(out)
-  
-}
-
-
-#' Function to get for each simulation the equilibrium 
-#' @param sim.equilibrium list of simulations until the equilibrium
-get_equil = function(sim.equilibrium){
-  
-  # Initialize output
-  list.out <- list()
-  
-  # First element of output: boolean to indicate if equilibrium is reached
-  list.out$reached_equil = ifelse(
-    is.na(sum((tree_format(sim.equilibrium) %>%
-                 filter(var == "BAsp") %>%
-                 filter(time == max(.$time) - 1))$value)), 
-    FALSE, TRUE
-  )
-  
-  # Second element of output: equilibrium state
-  list.out$equil = tree_format(sim.equilibrium) %>%
-    filter(var == "m", equil)
-  
-  # return output
-  return(list.out)
-}
-
-
-
-#' Function to simulate disturbances from forest list and equilibrium
-#' @param sim.list List of simulations to get population at equilibrium
-#' @param forest.list List of forest used to get sim.list
-#' @param disturbance.df disturbance dataframe
-make_simulation_disturbance <- function(forest, equil, disturbance.df, time.sim = 3000){
-  
-  # Verify that equilibrium is reached
-  if(equil$reached_equil){
-    
-    # Initialize the forest that will be used for the simulation
-    forest.in = forest
-    
-    # Loop on all species present in the forest
-    for(i in 1:length(names(forest$species))){
-      
-      # Name of species i
-      species.i = names(forest$species)[i]
-      
-      # Get equilibrium for species i
-      equil.i <- equil$equil %>%
-        filter(species == species.i) %>% 
-        pull(value)
-      
-      # Initiate the population at equilibrium
-      forest.in$species[[i]]$init_pop <- def_init_k(equil.i*0.03)
-      
-      # Update disturbance function
-      forest.in$species[[i]]$disturb_fun <- disturb_fun
-      
-      # Add disturbance coefficients
-      forest.in$species[[i]]$disturb_coef <- filter(matreex::disturb_coef, 
-                                                    species == species.i)
-      
-    }
-    
-    # Run simulation
-    out = sim_deter_forest(forest.in, tlim = time.sim, equil_time = time.sim,
-                           disturbance  = disturbance.df, verbose = FALSE) 
-  } else { 
-    # If equilibrium is not reached, return an empty matrix
-    out = matrix()
-  }
-  
-  
-  # Return the output list
-  return(out)
-  
-}
-
-
-
-#' Get resilience, resistance and recovery from simulations with disturbance
-#' @param sim.list.disturbed List of simulations where a disturbance occurred
-#' @param disturbance.df disturbance dataset used to generate the disturbance
-#' @param forest_list Table giving the information on each forest generated
-get_resilience_metrics <- function(sim.list.disturbed, disturbance.df, 
-                                   forest_list){
-  
-  # Initialize the output
-  out <- forest_list %>%
-    mutate(resistance = NA_real_, recovery = NA_real_, resilience = NA_real_, 
-           t0 = NA_real_, thalf = NA_real_)
-  
-  # Loop on all species combination
-  for(i in 1:dim(out)[1]){
-    
-    # First, verify that equilibrium was reached
-    if(!is.na(sim.list.disturbed[[i]][1, 1])){
-      
-      # Format the output
-      data.i <- tree_format(sim.list.disturbed[[i]]) %>%
-        filter(var == "BAsp") %>%
-        filter(!equil) %>%
-        group_by(time) %>%
-        summarize(BA = sum(value))
-      
-      
-      ## Calculate resistance
-      #  - Basal area at equilibrium
-      Beq.i = mean((data.i %>% filter(time < min(disturbance.df$t)))$BA)
-      # - Basal area after disturbance
-      Bdist.i = (data.i %>% filter(time == max(disturbance.df$t)+1))$BA
-      # - Resistance
-      out$resistance[i] = Beq.i/(Beq.i - Bdist.i)
-      
-      ## Calculate recovery
-      #  - Time at which population recovered fully
-      Rec.time.i = min((data.i %>% 
-                          filter(time > max(disturbance.df$t)) %>%
-                          filter(BA > Beq.i))$time)
-      # - Basal area 20 years after disturbance
-      Bdist20.i = (data.i %>% filter(time == max(disturbance.df$t)+21))$BA
-      # - Recovery = slope of BA increase in teh 20 years after disturbance
-      out$recovery[i] = abs(Bdist20.i - Bdist.i)/20
-      
-      ## Calculate resilience
-      out$resilience[i] <- 1/sum((data.i %>%
-                                    mutate(BA0 = .[which(.$time == 1), "BA"]) %>%
-                                    mutate(diff = abs(BA - BA0)))$diff)
-      
-      ## Calculate t0
-      #  - Time at which population recovered to 5% of the basal area lost
-      Rec.0.time.i = min((data.i %>% 
-                            filter(time > max(disturbance.df$t)) %>%
-                            filter(BA > (Beq.i + 19*Bdist.i)/20))$time)
-      # - Recovery = time to recover minus time of disturbance
-      out$t0[i] = Rec.0.time.i - max(disturbance.df$t)
-      
-      ## Calculate thalf
-      #  - Time at which population recovered to 50% of the basal area lost
-      Rec.half.time.i = min((data.i %>% 
-                               filter(time > max(disturbance.df$t)) %>%
-                               filter(BA > (Beq.i + Bdist.i)/2))$time)
-      # - Recovery = time to recover minus time of disturbance
-      out$thalf[i] = Rec.half.time.i - max(disturbance.df$t)
-      
-    }
-    
-  }
-  
-  # Return output
-  return(out)
-}
-
-#' Get functional diversity from simulations
-#' @param ID.forest Vector containing the ID of each forest simulated
-#' @param sim.list.disturbed List of simulations where a disturbance occured
-#' @param pc1_per_species Position of each species along the growth-mortality trade-off
-get_FD <- function(ID.forest, sim.list.disturbed, pc1_per_species){
-  
-  # Initialize the output
-  out <- data.frame(
-    ID.forest = ID.forest,
-    FD = NA_real_, CWM = NA_real_)
-  
-  
-  # Loop on all species combination
-  for(i in 1:dim(out)[1]){
-    
-    # First, verify that equilibrium was reached
-    if(!is.na(sim.list.disturbed[[i]][1, 1])){
-      # Format the output
-      data.i <- tree_format(sim.list.disturbed[[i]]) %>%
-        filter(var == "BAsp") %>%
-        filter(time == 1) %>%
-        left_join(pc1_per_species, by = "species") %>%
-        summarise(CWM = weighted.mean(pca1, w = value), 
-                  FD = weighted.var(pca1, w = value))
-      # Add to the final dataframe
-      out$CWM[i] <- data.i$CWM
-      out$FD[i] <- data.i$FD
-    }
-    
-  }
-  
-  # Replace NA by 0
-  out <- out %>% mutate(FD = ifelse(is.na(FD), 0, FD))
-  
-  # Return output
-  return(out)
-}
-
 
 #' Function to generate a list with climate and all possible sp combinations
 #' @param FUNDIV_climate_species data with climate and sp presence per plot
@@ -497,35 +192,382 @@ decode_species <- function(code, species_vec){
 
 
 
-
-
-#' Function to format resilience and fd for different climates
-#' @param list.in list with one element per climate, each element being a list 
-#'                with two elements: resilience and FD
-format_resilience_FD = function(list.in){
+#' Function to create a list of IPM to run
+#' @param climate list of climate objects
+make_species_list = function(climate){
+  
   # Loop on all climates
-  for(i in 1:length(names(list.in))){
+  for(i in 1:length(names(climate))){
+    # Dataframe for climate i
+    out.i = data.frame(
+      ID.climate = i, 
+      species = climate[[i]]$species
+    ) %>%
+      mutate(
+        file = paste0("rds/climate_", ID.climate, "/species/", species, ".rds"))
     
-    # Format climate i as dataframe
-    data.i = list.in[[i]]$resilience %>%
-      left_join(list.in[[i]]$FD, by = c("ID", "sp.combination")) %>%
-      mutate(climate = names(list.in)[i])
+    # Add to final dataset
+    if(i == 1) out = out.i
+    else out = rbind(out, out.i)
     
-    # Add to final output
-    if(i == 1) data = data.i
-    else data = rbind(data, data.i)
   }
   
-  # Return final data frame
-  return(data)
+  # Final formatting
+  out = out %>%
+    mutate(ID.species = c(1:dim(.)[1])) %>%
+    dplyr::select(ID.species, ID.climate, species, file)
+  
+  # Return output
+  return(out)
+  
 }
+
+
+#' Function to make a species object, save it as rds and return filename
+#' @param fit.list.allspecies demographic parameter for all species
+#' @param climate.in object created by the function make climate
+#' @param species_list table containing all species to create
+#' @param ID.species.in ID of the species to make in species_list
+make_species_rds = function(
+  fit.list.allspecies, climate, species_list, ID.species.in){
+  
+  # Make IPM
+  IPM.in = make_IPM(
+    species = species_list$species[ID.species.in], 
+    climate = climate[[species_list$ID.climate[ID.species.in]]]$climate, 
+    fit =  fit.list.allspecies[[species_list$species[ID.species.in]]],
+    clim_lab = paste0("climate_", species_list$ID.climate[ID.species.in]),
+    mesh = c(m = 700, L = 100, U = as.numeric(
+      fit.list.allspecies[[species_list$species[ID.species.in]]]$info[["max_dbh"]]) * 1.1),
+    BA = 0:200, verbose = TRUE
+  )
+  
+  # Create species object 
+  species.in = species(
+    IPM.in, init_pop = def_initBA(20), harvest_fun = def_harv, disturb_fun = def_disturb)
+  
+  # Save species object in a rdata
+  create_dir_if_needed(species_list$file[ID.species.in])
+  saveRDS(species.in, species_list$file[ID.species.in])
+  
+  # Return output list
+  return(species_list$file[ID.species.in])
+  
+}
+
+
+#' Function to create a list of forest for the simulations
+#' @param climate list of climate objects
+make_forest_list = function(climate){
+  
+  # Loop on all climates
+  for(i in 1:length(names(climate))){
+    # Dataframe for climate i
+    out.i = data.frame(
+      ID.climate = i, 
+      combination = climate[[i]]$combinations
+    ) %>%
+      mutate(
+        file.sim.equil = paste0(
+          "rds/climate_", ID.climate, "/sim_equilibrium/", combination, ".rds"), 
+        file.sim.dist = paste0(
+          "rds/climate_", ID.climate, "/sim_disturbance/", combination, ".rds"))
+    
+    # Add to final dataset
+    if(i == 1) out = out.i
+    else out = rbind(out, out.i)
+    
+  }
+  
+  # Final formatting
+  out = out %>%
+    mutate(ID.forest = c(1:dim(.)[1])) %>%
+    dplyr::select(ID.forest, ID.climate, combination, file.sim.equil, file.sim.dist)
+  
+  # Return output
+  return(out)
+  
+}
+
+#' Function to make a list of simulations till equilibrium
+#' @param climate object generated by make_climate
+#' @param harv_rules.ref rules for harvesting (needed to generate forest)
+#' @param species_list df with information on all species object
+#' @param forest_list df with information on all forest to simulate 
+#' @param species vector containing all species rds files created
+#' @param ID.forest.in ID of the forest to simulate in forest_list
+make_simulations_equilibrium = function(climate, harv_rules.ref, species_list, 
+                                        forest_list, species, ID.forest.in){
+  
+  # Identify ID of the climate
+  ID.climate.in = forest_list$ID.climate[ID.forest.in]
+  
+  # Identify species combination i
+  combination.in = forest_list$combination[ID.forest.in]
+  
+  # vector of species in forest i
+  species.in = unlist(strsplit(combination.in, "\\."))
+  
+  # Initialize list of species to create
+  list.species <- vector("list", length(species.in))
+  names(list.species) = species.in
+  
+  # Loop on all species
+  for(i in 1:length(species.in)){
+    
+    # Identify the file in species containing species i
+    species.file.i = species[(species_list %>%
+                                filter(species == species.in[i]) %>%
+                                filter(ID.climate == ID.climate.in))$ID.species]
+    
+    # Store the file in the list
+    list.species[[i]] = readRDS(species.file.i)
+    
+  }
+  
+  
+  # Make forest
+  forest.in = new_forest(species = list.species, harv_rules = harv_rules.ref)
+  
+  # Run simulation till equilibrium
+  sim.in = sim_deter_forest(
+    forest.in, tlim = 4000, equil_time = 10000, equil_dist = 250, 
+    equil_diff = 1, harvest = "default", SurfEch = 0.03, verbose = TRUE)
+  
+  # Save simulation in a rdata
+  create_dir_if_needed(forest_list$file.sim.equil[ID.forest.in])
+  saveRDS(sim.in, forest_list$file.sim.equil[ID.forest.in])
+  
+  # Return output list
+  return(forest_list$file.sim.equil[ID.forest.in])
+}
+
+
+
+
+#' Function to make a list of simulations with disturbance
+#' @param climate object generated by make_climate
+#' @param harv_rules.ref rules for harvesting (needed to generate forest)
+#' @param species_list df with information on all species object
+#' @param forest_list df with information on all forest to simulate 
+#' @param species vector containing all species rds files created
+#' @param sim_equilibrium Vector containing file names of simulations till equil
+#' @param ID.forest.in ID of the forest to simulate in forest_list
+#' @param disturbance.df disturbance dataframe
+make_simulations_disturbance = function(
+  climate, harv_rules.ref, species_list, forest_list, species, sim_equilibrium, 
+  ID.forest.in, disturbance.df){
+  
+  # Identify ID of the climate
+  ID.climate.in = forest_list$ID.climate[ID.forest.in]
+  
+  # Identify species combination i
+  combination.in = forest_list$combination[ID.forest.in]
+  
+  # vector of species in forest i
+  species.in = unlist(strsplit(combination.in, "\\."))
+  
+  # Initialize list of species to create
+  list.species <- vector("list", length(species.in))
+  names(list.species) = species.in
+  
+  # Read the simulation at equilibrium
+  sim_equilibrium.in = readRDS(sim_equilibrium[ID.forest.in])
+  
+  # Checked that the population reached equilibrium
+  reached_equil = ifelse(
+    is.na(sum((tree_format(sim_equilibrium.in) %>%
+                 filter(var == "BAsp") %>%
+                 filter(time == max(.$time) - 1))$value)), 
+    FALSE, TRUE
+  )
+  
+  # Only make the simulation id ==f population reached an equilibrium
+  if(reached_equil){
+    # Loop on all species
+    for(i in 1:length(species.in)){
+      
+      # Identify the file in species containing species i
+      species.file.i = species[(species_list %>%
+                                  filter(species == species.in[i]) %>%
+                                  filter(ID.climate == ID.climate.in))$ID.species]
+      
+      # Store the file in the list
+      list.species[[i]] = readRDS(species.file.i)
+      
+      # Extract the equilibrium for species i
+      equil.i = tree_format(sim_equilibrium.in) %>%
+        filter(var == "m", equil, species == species.in[i]) %>% 
+        pull(value)
+      
+      # Initiate the population at equilibrium
+      list.species[[i]]$init_pop <- def_init_k(equil.i*0.03)
+      
+      # Update disturbance function
+      list.species[[i]]$disturb_fun <- disturb_fun
+      
+      # Add disturbance coefficients
+      list.species[[i]]$disturb_coef <- filter(matreex::disturb_coef, 
+                                               species == species.in[i])
+    }
+    
+    
+    # Make forest
+    forest.in = new_forest(species = list.species, harv_rules = harv_rules.ref)
+    
+    # Run simulation till equilibrium
+    sim.in = sim_deter_forest(
+      forest.in, tlim = 4000, equil_time = 4000, disturbance = disturbance.df, 
+      SurfEch = 0.03, verbose = TRUE)
+  } else {
+    sim.in = matrix()
+  }
+  
+  
+  # Save simulation in a rdata
+  create_dir_if_needed(forest_list$file.sim.dist[ID.forest.in])
+  saveRDS(sim.in, forest_list$file.sim.dist[ID.forest.in])
+  
+  # Return output list
+  return(forest_list$file.sim.dist[ID.forest.in])
+}
+
+
+
+
+#' Get resilience, resistance and recovery from simulations with disturbance
+#' @param sim_disturbance vector containing the file names of sim with disturbance
+#' @param disturbance.df disturbance dataset used to generate the disturbance
+#' @param forest_list Table giving the information on each forest generated
+get_resilience_metrics <- function(sim_disturbance, disturbance.df, 
+                                   forest_list){
+  
+  # Initialize the output
+  out <- forest_list %>%
+    dplyr::select(ID.forest, ID.climate, combination) %>%
+    mutate(resistance = NA_real_, recovery = NA_real_, resilience = NA_real_, 
+           t0 = NA_real_, thalf = NA_real_)
+  
+  # Loop on all species combination
+  for(i in 1:length(sim_disturbance)){
+    
+    # Printer
+    print(paste0("Reading simulation ", i, "/", length(sim_disturbance)))
+    
+    # Read simulation i
+    sim.i = readRDS(sim_disturbance[i])
+    
+    # First, verify that equilibrium was reached
+    if(!is.na(sim.i[1, 1])){
+      
+      # Format the output
+      data.i <- tree_format(sim.i) %>%
+        filter(var == "BAsp") %>%
+        filter(!equil) %>%
+        group_by(time) %>%
+        summarize(BA = sum(value))
+      
+      
+      ## Calculate resistance
+      #  - Basal area at equilibrium
+      Beq.i = mean((data.i %>% filter(time < min(disturbance.df$t)))$BA)
+      # - Basal area after disturbance
+      Bdist.i = (data.i %>% filter(time == max(disturbance.df$t)+1))$BA
+      # - Resistance
+      out$resistance[i] = Beq.i/(Beq.i - Bdist.i)
+      
+      ## Calculate recovery
+      #  - Time at which population recovered fully
+      Rec.time.i = min((data.i %>% 
+                          filter(time > max(disturbance.df$t)) %>%
+                          filter(BA > Beq.i))$time)
+      # - Basal area 20 years after disturbance
+      Bdist20.i = (data.i %>% filter(time == max(disturbance.df$t)+21))$BA
+      # - Recovery = slope of BA increase in teh 20 years after disturbance
+      out$recovery[i] = abs(Bdist20.i - Bdist.i)/20
+      
+      ## Calculate resilience
+      out$resilience[i] <- 1/sum((data.i %>%
+                                    mutate(BA0 = .[which(.$time == 1), "BA"]) %>%
+                                    mutate(diff = abs(BA - BA0)))$diff)
+      
+      ## Calculate t0
+      #  - Time at which population recovered to 5% of the basal area lost
+      Rec.0.time.i = min((data.i %>% 
+                            filter(time > max(disturbance.df$t)) %>%
+                            filter(BA > (Beq.i + 19*Bdist.i)/20))$time)
+      # - Recovery = time to recover minus time of disturbance
+      out$t0[i] = Rec.0.time.i - max(disturbance.df$t)
+      
+      ## Calculate thalf
+      #  - Time at which population recovered to 50% of the basal area lost
+      Rec.half.time.i = min((data.i %>% 
+                               filter(time > max(disturbance.df$t)) %>%
+                               filter(BA > (Beq.i + Bdist.i)/2))$time)
+      # - Recovery = time to recover minus time of disturbance
+      out$thalf[i] = Rec.half.time.i - max(disturbance.df$t)
+      
+    }
+    
+  }
+  
+  # Return output
+  return(out)
+}
+
+
+#' Get functional diversity from simulations
+#' @param forest_list df containing info on each forest simulated
+#' @param sim_disturbance vector containing the file names of sim with disturbance
+#' @param pc1_per_species Position of each species along the growth-mortality trade-off
+get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
+  
+  # Initialize the output
+  out <- forest_list %>%
+    dplyr::select(ID.forest, ID.climate, combination) %>%
+    mutate(nsp = NA_real_, CWM = NA_real_, FD = NA_real_)
+  
+  
+  # Loop on all species combination
+  for(i in 1:length(sim_disturbance)){
+    
+    # Fill the number of species
+    out$nsp[i] = length(unlist(strsplit(out$combination[i], "\\.")))
+    
+    # Read simulation i
+    sim.i = readRDS(sim_disturbance[i])
+    
+    # First, verify that equilibrium was reached
+    if(!is.na(sim.i[1, 1])){
+      
+      # Format the output
+      data.i <- tree_format(sim.i) %>%
+        filter(var == "BAsp") %>%
+        filter(time == 1) %>%
+        left_join(pc1_per_species, by = "species") %>%
+        summarise(CWM = weighted.mean(pca1, w = value), 
+                  FD = weighted.var(pca1, w = value))
+      # Add to the final dataframe
+      out$CWM[i] <- data.i$CWM
+      out$FD[i] <- data.i$FD
+    }
+    
+  }
+  
+  # Replace NA by 0
+  out <- out %>% mutate(FD = ifelse(is.na(FD), 0, FD))
+  
+  # Return output
+  return(out)
+}
+
 
 
 #' Format data for the models
 #' @param climate list of climate objects used for the simulations
-#' @param resilience_metrics df with resilience per forest ID
+#' @param resilience df with resilience per forest ID
 #' @param FD df with FD and CWM per forest ID
-get_data_model = function(climate, resilience_metrics, FD){
+get_data_model = function(climate, resilience, FD){
   
   # Build a dataset to associate ID climate with sgdd, wai and pca1
   data.climate = data.frame(
@@ -541,10 +583,10 @@ get_data_model = function(climate, resilience_metrics, FD){
   }
   
   # Format final dataset
-  out = resilience_metrics %>%
-    left_join(FD, by = "ID.forest") %>%
+  out = resilience %>%
+    left_join(FD, by = c("ID.forest", "ID.climate", "combination")) %>%
     left_join(data.climate, by = "ID.climate") %>%
-    dplyr::select(ID.forest, ID.climate, forest.composition = combinations, 
+    dplyr::select(ID.forest, ID.climate, forest.composition = combination, nsp, 
                   sgdd, wai, pca1, FD, CWM, resistance, recovery, resilience)
   
   # Return output
