@@ -622,3 +622,171 @@ plot_CMW_and_FD_effect_climate = function(data_models, file.in){
   
 }
 
+
+
+#' Analyse the data with a structural equation model approach
+#' @param data_model formatted model output
+#' @param file.in name of the file to save, including path
+plot_sem = function(data_model, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Make the sem model
+  
+  # -- Start by formatting data before fitting the model
+  data.in = data_model %>%
+    # Remove invalid data
+    filter(resistance > 0) %>%
+    # Log transform resilience metrics to fit normality assumption
+    mutate(resistance.log = log(resistance), 
+           recovery.log = log(recovery), 
+           resilience.log = log(resilience)) %>%
+    # scale all variables used in models
+    mutate(climate_scaled = as.numeric(scale(pca1, center = TRUE, scale = TRUE)), 
+           FD_scaled = as.numeric(scale(FD, center = TRUE, scale = TRUE)), 
+           CWM_scaled = as.numeric(scale(CWM, center = TRUE, scale = TRUE)), 
+           resistance.log_scaled = as.numeric(scale(resistance.log, center = TRUE, scale = TRUE)), 
+           recovery.log_scaled = as.numeric(scale(recovery.log, center = TRUE, scale = TRUE)), 
+           resilience.log_scaled = as.numeric(scale(resilience.log, center = TRUE, scale = TRUE)))
+  
+  # -- Make model
+  mod_sem = psem(
+    lm(FD_scaled ~ climate_scaled, data = data.in), 
+    lm(CWM_scaled ~ climate_scaled, data = data.in), 
+    lm(resistance.log_scaled ~ FD_scaled + CWM_scaled, data = data.in), 
+    lm(recovery.log_scaled ~ FD_scaled + CWM_scaled + climate_scaled, data = data.in), 
+    lm(resilience.log_scaled ~ resistance.log_scaled + recovery.log_scaled + 
+         FD_scaled + CWM_scaled + climate_scaled, data = data.in)
+  )
+  
+  
+  
+  
+  
+  # Plot the results
+  
+  # -- Prepare some parameters about the box to drax
+  box.height = 2
+  box.width = 4
+  box.width.spacing = 2
+  box.height.spacing = 2
+  
+  # -- Make a dataset to plot the box with the text
+  data.plot.box = data.frame(
+    text = c("climate", "FD", "CWM", "recovery", "resistance", "resilience"), 
+    position = c("c", "l", "r", "l", "r", "c"), 
+    height.level = c(4, 3, 3, 2, 2, 1)) %>%
+    mutate(ymin = (height.level - 0.5*box.height)*(box.height + box.height.spacing), 
+           ymax = ymin + box.height,
+           xmin = case_when(position == "c" ~ -box.width/2, 
+                            position == "l" ~ -(box.width + 0.5*box.width.spacing), 
+                            position == "r" ~ box.width.spacing*0.5), 
+           xmax = xmin + box.width,
+           center.y = 0.5*(ymin + ymax), 
+           center.x = 0.5*(xmin + xmax))
+  
+  # -- Plot the boxes
+  plot.box = data.plot.box %>%
+    ggplot(aes(x = center.x, y = center.y))  + 
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
+              color = "black", fill = "#415A77")+ 
+    geom_text(aes(label = text), color = "white", size = 7) + 
+    theme(axis.title = element_blank(), 
+          axis.ticks = element_blank(), 
+          axis.text = element_blank(), 
+          panel.background = element_rect(fill = "white", color = "black"), 
+          legend.position = "none",
+          panel.grid = element_blank())
+  
+  # -- Extract model results and prepare for plotting
+  data.plot.arrow = as.data.frame(summary(mod_sem, .progressBar = F)$coefficients) %>%
+    # Extract variable of interest
+    dplyr::select(var.resp = Response, var.exp = Predictor, 
+                  est = Estimate, p = P.Value) %>%
+    # simplify the name of variables
+    mutate(var.exp = gsub("\\..+", "", gsub("\\_.+", "", var.exp)), 
+           var.resp = gsub("\\..+", "", gsub("\\_.+", "", var.resp))) %>%
+    # Add plot information on the resp variable
+    left_join((data.plot.box %>%
+                 dplyr::select(var.resp = text, level.resp = height.level, 
+                               center.x.resp = center.x, center.y.resp = center.y)), 
+              by = "var.resp") %>%
+    # Add plot information on the exp variable
+    left_join((data.plot.box %>%
+                 dplyr::select(var.exp = text, level.exp = height.level, 
+                               center.x.exp = center.x, center.y.exp = center.y)), 
+              by = "var.exp") %>%
+    # Difference between the two boxes connected by the arrow
+    mutate(level.diff = level.exp - level.resp) %>%
+    # Calculate intermediate height when level difference is 2
+    mutate(height.mid = case_when(
+      level.diff == 2 & level.exp == 4 ~ center.y.resp + 0.5*box.height + 0.5*box.height.spacing, 
+      level.diff == 2 & level.exp == 3 ~ center.y.exp - 0.5*box.height - 0.7*box.height.spacing, 
+      TRUE ~ NA_real_
+    )) %>%
+    # Slightly move the center x of response to make arrows visible
+    mutate(center.x.resp = case_when(
+      center.x.resp != center.x.exp ~ center.x.resp + 0.05*center.x.exp, 
+      TRUE ~ center.x.resp
+    )) %>%
+    # Slightly move the center x of explanatory when level diff == 2 to be more visible
+    mutate(center.x.exp = case_when(
+      level.diff == 2 & level.exp == 3 ~ center.x.exp*0.97, 
+      level.diff == 1 & level.exp == 3 ~ center.x.exp*1.05,
+      TRUE ~ center.x.exp
+    )) %>%
+    # Report significance, sign and absolute value of estimate
+    mutate(signif = ifelse(p <= 0.05, "yes", "no"), 
+           sign = ifelse(est < 0, "negative", "positive"), 
+           est.abs = abs(est), 
+           est.abs.cat = case_when(
+             est.abs <= quantile(est.abs, 0.33) ~ "low", 
+             est.abs > quantile(est.abs, 0.33) & 
+               est.abs <= quantile(est.abs, 0.66) ~ "mid", 
+             TRUE ~ "high"
+           )) 
+  
+  # -- plot the box with arrows
+  plot.out = plot.box + 
+    # direct arrows for difference in levels lower or higher than 2
+    geom_segment(data = subset(data.plot.arrow, level.diff != 2), 
+                 aes(x = center.x.exp, xend = center.x.resp, 
+                     y = center.y.exp - 0.5*box.height, 
+                     yend = center.y.resp + 0.5*box.height, 
+                     size = est.abs.cat, linetype = signif, color = sign), 
+                 arrow = arrow(length = unit(0.15, "cm")), 
+                 type = "closed") + 
+    # Segments and arrow for difference in levels of 2
+    # -- first vertical segment
+    geom_segment(data = subset(data.plot.arrow, level.diff == 2), 
+                 aes(x = center.x.exp, xend = center.x.exp, 
+                     y = center.y.exp - 0.5*box.height, 
+                     yend = height.mid, 
+                     size = est.abs.cat, linetype = signif, color = sign)) + 
+    # -- second segment, horizontal
+    geom_segment(data = subset(data.plot.arrow, level.diff == 2), 
+                 aes(x = center.x.exp, xend = center.x.resp, 
+                     y = height.mid, yend = height.mid, 
+                     size = est.abs.cat, linetype = signif, color = sign)) + 
+    # -- third: vertical arrow
+    geom_segment(data = subset(data.plot.arrow, level.diff == 2), 
+                 aes(x = center.x.resp, xend = center.x.resp, 
+                     y = height.mid, 
+                     yend = center.y.resp + 0.5*box.height, 
+                     size = est.abs.cat, linetype = signif, color = sign), 
+                 arrow = arrow(length = unit(0.15, "cm")), 
+                 type = "closed") + 
+    # -- scale linetype, color and size
+    scale_color_manual(values = c(`negative` = "#0081A7", `positive` = "#F07167")) + 
+    scale_linetype_manual(values = c(`yes` = "solid", `no` = "dashed")) + 
+    scale_size_manual(values = c(`low` = 0.3, `mid` = 0.6, `high` = 1.1))
+  
+  # - Save the plot
+  ggsave(file.in, plot.out, width = 10, height = 16, units = "cm", dpi = 600, bg = "white")
+  
+  # return the name of all the plots made
+  return(file.in)
+  
+}
+

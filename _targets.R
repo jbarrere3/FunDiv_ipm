@@ -23,7 +23,7 @@ lapply(grep("R$", list.files("R"), value = TRUE), function(x) source(file.path("
 # install if needed and load packages
 packages.in <- c("dplyr", "ggplot2", "matreex", "tidyr", "data.table", 
                  "factoextra", "modi", "sf", "rnaturalearth", "scales", 
-                 "cowplot", "multcomp")
+                 "cowplot", "multcomp", "piecewiseSEM")
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
@@ -165,7 +165,11 @@ list(
   # Plot FD and CWM along the climatic gradient
   tar_target(fig_FD_and_CWM_vs_climate, plot_FD_and_CWM_vs_climate(
     data_model, "output/fig_FD_and_CWM_vs_climate.jpg"), 
-    format = "file")
+    format = "file"), 
+  
+  # Make a network analysis with peacewise SEM
+  tar_target(fig_sem, plot_sem(data_model, "output/fig_sem.jpg"), 
+             format = "file")
   
   
 
