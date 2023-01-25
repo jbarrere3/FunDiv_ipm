@@ -360,52 +360,41 @@ plot_resilience_vs_climate = function(data_models, file.in){
     var.i = unique(data.in$variable)[i]
     
     # Make model
-    mod.i = aov(log(value) ~ ID.climate, 
-                data = subset(data.in, variable == var.i))
+    mod.i = lm(log(value) ~ pca1, 
+               data = subset(data.in, variable == var.i))
     
-    # Data for plotting
-    data.i = data.in %>%
-      # Only keep the right variable
-      filter(variable == var.i)
+    # Data fit
+    data_fit.i = expand.grid(pca1 = seq(from = min(subset(data.in, variable == var.i)$pca1), 
+                                        to = max(subset(data.in, variable == var.i)$pca1), 
+                                        length.out = 1000), 
+                             climate = NA_character_) %>%
+      cbind(exp(predict(mod.i, newdata = ., interval = "confidence", 
+                        level = 0.95))) %>%
+      rename(value = fit)
     
-    # Data with the significance letters
-    data.labels.i = data.i %>%
-      # Calculate the 75% quantile
-      group_by(pca1) %>%
-      summarize(label.pos = max(value)) %>%
-      # Add 10% of max value 
-      mutate(label.pos = label.pos + 0.2*quantile(data.i$value, 0.975)) %>%
-      left_join(
-        data.frame(
-          pca1 = unique(data.in$pca1), 
-          label = as.character(cld(glht(mod.i, linfct=mcp(ID.climate="Tukey")))$mcletters$Letters)
-        ), 
-        by = "pca1") 
+    
+    # Make a color vector
+    color.vec = colorRampPalette(c("blue", "red"))(length(unique(data.in$ID.climate)))
+    names(color.vec) = paste0("climate.", c(1:length(unique(data.in$ID.climate))))
     
     # Make plot i
-    plot.i = data.i %>%
-      mutate(value.log = log(value)) %>%
+    plot.i = subset(data.in, variable == var.i) %>%
       group_by(ID.climate, pca1) %>%
-      summarize(mean.log = mean(value.log, na.rm = TRUE), 
-                lwr.log = quantile(value.log, 0.025), 
-                upr.log = quantile(value.log, 0.975)) %>%
-      mutate(climate = paste0("climate.", ID.climate), 
-             value = exp(mean.log), 
-             lwr = exp(lwr.log), 
-             upr = exp(upr.log)) %>%
-      ggplot(aes(x = pca1, y = value, fill = climate)) +
-      geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0) +
+      summarize(lwr = quantile(value, 0.025), 
+                upr = quantile(value, 0.975), 
+                value = mean(value, na.rm = TRUE)) %>%
+      mutate(climate = paste0("climate.", ID.climate)) %>%
+      ggplot(aes(x = pca1, y = value, ymin = lwr, ymax = upr, 
+                 fill = climate, group = 1)) +
+      geom_errorbar(width = 0) +
       geom_point(shape = 21, color = "black") + 
-      scale_fill_manual(
-        values = colorRampPalette(c("blue", "red"))(length(unique(data.in$ID.climate)))) + 
-      geom_text(data = (data.labels.i %>% mutate(climate = NA)),
-                aes(label = label, y = label.pos), 
-                size = 6, color = "black") + 
+      geom_line(data = data_fit.i, inherit.aes = TRUE) + 
+      geom_ribbon(data = data_fit.i, inherit.aes = TRUE, alpha = 0.3, color = NA) + 
+      scale_fill_manual(values = color.vec) + 
       xlab("CLIMATE") + ylab(toupper(var.i)) + 
       ggtitle(paste0(
-        "F = ", round(as.numeric(summary(mod.i)[[1]][["F value"]][1]), digits = 1), 
-        ", ", scales::pvalue(as.numeric(summary(mod.i)[[1]][["Pr(>F)"]][1]), 
-                             accuracy = 0.01, add_p = TRUE)
+        "F = ", round(anova(mod.i)[1, 4], digits = 1), 
+        ", ", scales::pvalue(anova(mod.i)[1, 5], accuracy = 0.01, add_p = TRUE)
       )) +
       theme(panel.background = element_rect(fill = "white", color = "black"), 
             panel.grid = element_blank(), 
@@ -418,21 +407,17 @@ plot_resilience_vs_climate = function(data_models, file.in){
     eval(parse(text = paste0("list_plots$", var.i, " = plot.i")))
   }
   
-  # Add legend to the output list
-  list_plots$legend = get_legend(plot.i + theme(legend.position = "left", 
-                                                legend.text = element_text(size = 16)))
   
   # Final plot
-  plot.out = plot_grid(plotlist = list_plots, align = "hv", scale = 0.9,
-                       labels = c(letters[c(1:(length(names(list_plots)) - 1))], ""))
+  plot.out = plot_grid(plotlist = list_plots, align = "hv", scale = 0.9, nrow = 1,
+                       labels = letters[c(1:(length(names(list_plots)) - 1))])
   
   # Save the plot
-  ggsave(file.in, plot.out, width = 16, height = 16, units = "cm", 
+  ggsave(file.in, plot.out, width = 21, height = 7, units = "cm", 
          dpi = 600, bg = "white")
   
   # return the name of the file
   return(file.in)
-  
 }
 
 

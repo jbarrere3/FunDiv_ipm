@@ -73,7 +73,7 @@ list(
   
   # Generate some climates
   # -- iterations along all climates that will be created (one iteration per climate)
-  tar_target(ID.climate, c(1:5)),
+  tar_target(ID.climate, c(1:10)),
   # -- list of climates
   tar_target(climate_list, create_climate_list(length(ID.climate))),
   # -- generate one climate object per iteration with branching
