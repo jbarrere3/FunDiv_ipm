@@ -228,7 +228,8 @@ decode_species <- function(code, species_vec){
 
 #' Function to create a list of IPM to run
 #' @param climate list of climate objects
-make_species_list = function(climate){
+#' @param disturbance.in character: name of the disturbance (for file archiving)
+make_species_list = function(climate, disturbance.in){
   
   # Loop on all climates
   for(i in 1:length(names(climate))){
@@ -238,7 +239,7 @@ make_species_list = function(climate){
       species = climate[[i]]$species
     ) %>%
       mutate(
-        file = paste0("rds/climate_", ID.climate, "/species/", species, ".rds"))
+        file = paste0("rds/", disturbance.in, "/climate_", ID.climate, "/species/", species, ".rds"))
     
     # Add to final dataset
     if(i == 1) out = out.i
@@ -292,7 +293,8 @@ make_species_rds = function(
 
 #' Function to create a list of forest for the simulations
 #' @param climate list of climate objects
-make_forest_list = function(climate){
+#' @param disturbance.in character: name of the disturbance (for file archiving)
+make_forest_list = function(climate, disturbance.in){
   
   # Loop on all climates
   for(i in 1:length(names(climate))){
@@ -303,9 +305,9 @@ make_forest_list = function(climate){
     ) %>%
       mutate(
         file.sim.equil = paste0(
-          "rds/climate_", ID.climate, "/sim_equilibrium/", combination, ".rds"), 
+          "rds/", disturbance.in, "/climate_", ID.climate, "/sim_equilibrium/", combination, ".rds"), 
         file.sim.dist = paste0(
-          "rds/climate_", ID.climate, "/sim_disturbance/", combination, ".rds"))
+          "rds/", disturbance.in, "/climate_", ID.climate, "/sim_disturbance/", combination, ".rds"))
     
     # Add to final dataset
     if(i == 1) out = out.i
