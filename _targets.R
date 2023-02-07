@@ -137,7 +137,7 @@ list(
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Plots -----
+  # -- Plots for final analyses -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
   # Map of the different climates used for the analysis
@@ -169,11 +169,33 @@ list(
   
   # Make a network analysis with peacewise SEM
   tar_target(fig_sem, plot_sem(data_model, "output/fig_sem.jpg"), 
-             format = "file")
+             format = "file"), 
   
   
-
- 
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Plots for final analyses -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  # changes in FW and CWM over time
+  tar_target(fig_cwm_and_fd_overtime, plot_cwm_fd_overtime(
+    sim_equilibrium, forest_list, pc1_per_species, 
+    "output/exploratory/cwm_and_fd_over_time.jpg"), format = "file"), 
+  
+  # Functional density distribution of random vs selected communities
+  tar_target(fig_pca1_selection_vs_random, plot_pca1_selection_vs_random(
+    climate, pc1_per_species, "output/exploratory/fig_pca1_selection_vs_random.jpg"), 
+    format = "file"), 
+  
+  # Proportion of species with ensitivity estimation per climate
+  tar_target(fig_prop.species_per_climate_storm, plot_prop.species_per_climate(
+    climate_list, FUNDIV_climate_species, disturbance.in = "storm", 
+    exclude.in = c("Quercus_ilex"), "output/exploratory/fig_prop_per_clim_storm.jpg"), 
+    format = "file"), 
+  tar_target(fig_prop.species_per_climate_fire, plot_prop.species_per_climate(
+    climate_list, FUNDIV_climate_species, disturbance.in = "fire", 
+    exclude.in = c(), "output/exploratory/fig_prop_per_clim_fire.jpg"), 
+    format = "file")
   
 )
 

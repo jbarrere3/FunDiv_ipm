@@ -775,3 +775,268 @@ plot_sem = function(data_model, file.in){
   
 }
 
+
+
+
+
+
+
+## -- Exploratory plots ----
+
+#' Function to plot changes in CWM and FD along time till equilibrium
+#' @param sim_equilibrium vector of the filenames of simulations saved as rds
+#' @param forest_list dataset with information on all forests simulated
+#' @param pc1_per_species df with coordinates of the climate pca per species
+#' @param file.in Name of the file to save, including path
+plot_cwm_fd_overtime = function(sim_equilibrium, forest_list, pc1_per_species, 
+                                file.in){
+  # Create the directories of file.in if needed
+  create_dir_if_needed(file.in)
+  
+  # Loop on all simulations
+  for(i in 1:length(sim_equilibrium)){
+    
+    # Printer
+    print(paste0("Getting data for forest ", i, "/", length(sim_equilibrium)))
+    
+    # Extract the data for simulation i
+    data.i = readRDS(sim_equilibrium[i]) %>%
+      tree_format() %>%
+      filter(equil == FALSE, var == "BAsp") %>%
+      left_join(pc1_per_species, by = "species")
+    
+    # Check that the simulations reached equilibrium
+    if(!is.na(sum(data.i$value))){
+      
+      # If equilibrium is reached, calculate cwm and fd for each time step
+      data.i = data.i  %>%
+        group_by(time) %>%
+        summarize(CWM = weighted.mean(pca1, w = value, na.rm = TRUE), 
+                  FD = weighted.var(pca1, w = value, na.rm = TRUE)) %>%
+        mutate(sim.number = i, 
+               ID.climate = forest_list$ID.climate[i], 
+               sp.richness = length(unlist(strsplit(forest_list$combination[i], "\\."))))
+      
+      # Add to the final dataset
+      if(i == 1) data = data.i
+      else data = rbind(data, data.i)
+    }
+    
+  }
+  
+  # Plot the data for CWM
+  plot.cwm = data %>%
+    mutate(climate = paste0("climate.", ID.climate)) %>%
+    mutate(climate = factor(
+      climate, levels = paste0("climate.", c(1:length(unique(data$ID.climate))))
+    )) %>%
+    ggplot(aes(x = time, y = CWM, group = sim.number, color = sp.richness)) + 
+    geom_line() + 
+    facet_wrap(~ climate, nrow = 2) + 
+    scale_color_gradient(low = "blue", high = "red") + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank())
+  
+  # Plot the data for functional diversity
+  plot.fd = data %>%
+    mutate(climate = paste0("climate.", ID.climate)) %>%
+    mutate(climate = factor(
+      climate, levels = paste0("climate.", c(1:length(unique(data$ID.climate))))
+    )) %>%
+    ggplot(aes(x = time, y = FD, group = sim.number, color = sp.richness)) + 
+    geom_line() + 
+    facet_wrap(~ climate, nrow = 2) + 
+    scale_color_gradient(low = "blue", high = "red") + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank())
+  
+  # Final plot
+  plot.out = plot_grid(plot.cwm, plot.fd, nrow = 2, labels = c("(a)", "(b)"))
+  
+  # Save the plot
+  ggsave(file.in, plot.out, width = 30, height = 20, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # Return the name of the file saved
+  return(file.in)
+  
+}
+
+
+
+
+#' Function to show the distribution of mean and var pca values for
+#' combination of species selected randomly or based on occurence
+#' @param climate list of climate objects
+#' @param pc1_per_species df containing climate pca coordinates per species
+#' @param file.in name of the file to save, including path
+plot_pca1_selection_vs_random = function(climate, pc1_per_species, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Loop on all climate
+  for(i in 1:length(names(climate))){
+    
+    # Vector of available species for climate i
+    sp.vec.i = climate[[i]]$species
+    
+    # df with the data for selected combinations
+    data.selected.i = data.frame(combination = climate[[i]]$combinations) %>%
+      mutate(source = "selected") %>%
+      mutate(sp.richness = unlist(lapply(
+        .[, "combination"], function(x) length(unlist(strsplit(x, "\\."))))))
+    
+    
+    # Loop to identify all possible combinations for each level of species richness
+    for(j in 1:max(data.selected.i$sp.richness)){
+      # combinations for richness j
+      data.random.ij = data.frame(
+        combination = apply(as.data.frame(t(combn(sp.vec.i, j))), 1, paste, collapse = "." )
+      ) %>%
+        mutate(source = "random", sp.richness = j)
+      
+      # Add to the final df with random data
+      if(j == 1) data.random.i = data.random.ij
+      else data.random.i = rbind(data.random.i, data.random.ij)
+    }
+    
+    # Final data for climate i: bind the two df
+    data.i = rbind(data.selected.i, data.random.i) %>%
+      # Create one line per species for each forest
+      mutate(ID.climate = i, ID.forest = c(1:dim(.)[1])) %>%
+      cbind(as.data.frame(matrix(0, nrow = dim(.)[1], ncol = length(sp.vec.i), 
+                                 dimnames = list(NULL, sp.vec.i)))) %>%
+      gather(key = "species", value = "present", sp.vec.i)
+    # Only keep the species present in the forest 
+    for(k in 1:dim(data.i)[1]) data.i$present[k] = ifelse(
+      grepl(data.i$species[k], data.i$combination[k]), 1, 0)
+    data.i = data.i %>%
+      filter(present == 1) %>%
+      dplyr::select(ID.forest, ID.climate, source, combination, sp.richness, species) %>%
+      arrange(ID.forest)
+    
+    # Add to the final output data
+    if(i == 1) data = data.i
+    else data = rbind(data, data.i)
+    
+  }
+  
+  # Final formatting
+  data.out = data %>%
+    left_join(pc1_per_species, by = "species") %>%
+    group_by(ID.forest, ID.climate, combination, sp.richness, source) %>%
+    summarize(mean = mean(pca1), 
+              var = var(pca1))  %>%
+    mutate(climate = paste0("climate.", ID.climate)) %>%
+    mutate(climate = factor(
+      climate, levels = paste0("climate.", c(1:length(unique(data$ID.climate))))
+    ))
+  
+  # Plot for mean pca value
+  plot.mean = data.out %>%
+    ggplot(aes(x = mean, fill = source)) + 
+    geom_density(color = "black", aes(y = stat(density)), alpha = 0.5) + 
+    facet_wrap(~ climate, nrow = 2) + 
+    xlab("Mean PCA value") + 
+    scale_fill_manual(values = c("black", "red")) +
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          legend.position = "none")
+  
+  # Plot for mean pca value
+  plot.var = data.out %>%
+    ggplot(aes(x = var, fill = source)) + 
+    geom_density(color = "black", aes(y = stat(density)), alpha = 0.5) + 
+    facet_wrap(~ climate, nrow = 2) + 
+    xlab("Mean PCA variance") + 
+    scale_fill_manual(values = c("black", "red")) +
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(),
+          legend.title = element_blank(),
+          legend.position = "none")
+  
+  # Final plot
+  plot.out = plot_grid(
+    plot_grid(plot.mean, plot.var, nrow = 2, labels = c("(a)", "(b)"), scale = 0.95), 
+    get_legend(plot.var + theme(legend.position = "right")), 
+    nrow = 1, rel_widths = c(1, 0.2)
+  )
+  
+  # Save the plot
+  ggsave(file.in, plot.out, width = 18, height = 12, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # Return the name of the file saved
+  return(file.in)
+  
+}
+
+
+#' Function to plot the proportion of species and of trees for which we have 
+#' disturbance data per climate.
+#' @param climate_list List containing quantiles for each climate
+#' @param FUNDIV_climate_species df containing species presence and climate per FUNDIV plot 
+#' @param disturbance.in disturbance to focus on ("storm", "biotic", "fire", or "snow")
+#' @param exclude.in vector of additional species to exclude 
+#' @param file.in Name of the file to save, including path
+plot_prop.species_per_climate = function(
+  climate_list, FUNDIV_climate_species, disturbance.in, exclude.in = c(), file.in){
+  
+  # Vector of all species
+  species_vec = colnames(FUNDIV_climate_species)[grep("_", colnames(FUNDIV_climate_species))]
+  
+  # Vector of all species for which we have disturbance parameters
+  data("disturb_coef")
+  species_vec_dist = (disturb_coef %>%
+                        filter(disturbance %in% disturbance.in))$species
+  species_vec_dist = species_vec_dist[!(species_vec_dist %in% exclude.in)]
+  
+  # Loop on all climate
+  for(i in 1:length(names(climate_list))){
+    
+    # Format data for climate i
+    data.i = FUNDIV_climate_species %>%
+      filter(pca1 > quantile(FUNDIV_climate_species$pca1, climate_list[[i]][1])) %>%
+      filter(pca1 < quantile(FUNDIV_climate_species$pca1, climate_list[[i]][2])) %>%
+      gather(key = "species", value = "present", species_vec) %>%
+      group_by(species) %>%
+      summarize(n = sum(present)) %>%
+      mutate(present.in.data = ifelse(n == 0, 0, 1),
+             present.in.dist = ifelse(species %in% species_vec_dist, 1, 0),
+             climate = names(climate_list)[i], 
+             pca1.mean = quantile(FUNDIV_climate_species$pca1, sum(climate_list[[i]])/2)) %>%
+      dplyr::select(climate, pca1.mean, species, present.in.data, present.in.dist, n)
+    
+    # Add to the final dataset
+    if(i == 1) data = data.i
+    else data = rbind(data, data.i)
+  }
+  
+  # Final plot 
+  plot.out = data %>%
+    ungroup() %>%
+    group_by(climate, pca1.mean) %>%
+    summarize(species.estimated = sum(present.in.data*present.in.dist)/sum(present.in.data), 
+              trees.estimated = sum(present.in.dist*n)/sum(n)) %>%
+    gather(key = "variable", value = "Proportion", "species.estimated", "trees.estimated") %>%
+    ggplot(aes(x = pca1.mean, y = Proportion, fill = variable)) + 
+    geom_point(shape = 21, color = "black") + 
+    xlab("Position in the PCA climate") + ylim(0, 1) +
+    ggtitle(disturbance.in) +
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          legend.title = element_blank(), 
+          legend.key = element_blank())
+  
+  # - Save the plot
+  ggsave(file.in, plot.out, width = 12, height = 8, units = "cm", dpi = 600, bg = "white")
+  
+  # return the name of all the plots made
+  return(file.in)
+  
+}
