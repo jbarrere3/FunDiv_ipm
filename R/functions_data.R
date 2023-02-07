@@ -65,15 +65,17 @@ load_param_demo <- function(species.names){
 }
 
 
-#' Function to generate a list with climate and all possible sp combinations
+#' Function to generate a list with climate with species combinations
 #' @param FUNDIV_climate_species data with climate and sp presence per plot
 #' @param quantiles.in range between 0 and 1 of pca1 value to select
 #' @param disturbance.in name of the disturbance we plan to apply to filter 
 #'                       species combinations compatible
 #' @param nsp_per_richness number of sp combinations to select per sp richness
-make_climate <- function(FUNDIV_climate_species, quantiles.in, 
-                         disturbance.in = "storm", 
-                         nsp_per_richness = 10){
+#' @param exclude.in vector of species to exclude if bad estimation or IPM fit
+#' @param method way to select species combination: most frequent ("frequency") or "random" 
+make_climate <- function(FUNDIV_climate_species, quantiles.in, disturbance.in, 
+                         nsp_per_richness = 10, exclude.in = c("Carpinus_betulus"), 
+                         method = "frequency"){
   
   # Initialize output list
   out = list()
@@ -96,8 +98,8 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
   
   # Vector of all species
   species_vec = colnames(FUNDIV_climate_species)[grep("_", colnames(FUNDIV_climate_species))]
-  # Remove hornbeam from this vector as too unstable in the simulations
-  species_vec = species_vec[species_vec != "Carpinus_betulus"]
+  # Remove species with bad estimation or unstable in simulations
+  species_vec = species_vec[!(species_vec %in% exclude.in)]
   
   # Adjust species combinations to the disturbance if one is specified
   if(disturbance.in %in% c("storm", "fire", "biotic")){
@@ -109,7 +111,9 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
     species_vec = species_vec[which(species_vec %in% species_vec_dist)]
   }
   
-  # species combinations for this climate
+  
+  
+  # species combinations for this climate based on data (frequency method)
   # -- Paste all species presence absence to create binary code
   eval(parse(text = paste0(
     "data.in <- FUNDIV_climate_species %>% mutate(combi = paste0(", 
@@ -144,10 +148,38 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
     combinations.in = c(combinations.in, paste(vec.i, collapse = "."))
     # Store all species in species vector
     species.in = c(species.in, vec.i)
-  } 
+  }
+  # -- Identify all species for this climate
+  species.in = unique(species.in)
+  
+  
+  
+  # Make a random selection of species with same number of forest per richness
+  # -- Identify the number of combinations per species richness
+  combi.per.richness = data_codes %>%
+    filter(combi %in% codes) %>%
+    group_by(n.sp) %>%
+    summarize(n = n()) %>%
+    arrange(n.sp)
+  # -- Initialize the vector of random combinations
+  combinations.random.in = c()
+  # -- Loop on all levels of richness
+  for(r in 1:dim(combi.per.richness)[1]){
+    # All existing combinations for richness r
+    combinations.r.all = apply(as.data.frame(t(combn(species.in, r))), 1, 
+                               paste, collapse = "." )
+    # Randomly sample the same number of forest per richness as with the data approach
+    combinations.r = sample(combinations.r.all, size = combi.per.richness$n[r], 
+                            replace = FALSE)
+    # Add to the vector of random species combinations
+    combinations.random.in = c(combinations.random.in, combinations.r)
+  }
+  
+  
   # Add to the final list the combinations and the list of all species
-  out$combinations = combinations.in
-  out$species = unique(species.in)
+  if(method == "frequency") out$combinations = combinations.in
+  if(method == "random") out$combinations = combinations.random.in
+  out$species = species.in
   
   # Return output
   return(out)
@@ -156,10 +188,12 @@ make_climate <- function(FUNDIV_climate_species, quantiles.in,
 
 #' Function that creates climate list based on quantiles
 #' @param n.clim integer: number of climate to create in the list
-create_climate_list = function(n.clim){
+#' @param quantile.range numeric vector of length two indicating the climatic range 
+create_climate_list = function(n.clim, quantile.range = c(0, 1)){
   
   # Vector that contains a sequence of quantiles value from 0 to 1
-  vec.in = seq(from = 0, to = 1, length.out = n.clim+1)
+  vec.in = seq(from = quantile.range[1], to = quantile.range[2], 
+               length.out = n.clim+1)
   
   # Initialize the output list
   list.out = vector(mode = "list", length = n.clim)
