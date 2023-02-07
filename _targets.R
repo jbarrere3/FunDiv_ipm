@@ -126,6 +126,59 @@ list(
   
   
   
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Make simulations with fire disturbances -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  # Generate some climates
+  # -- iterations along all climates that will be created (one iteration per climate)
+  tar_target(ID.climate_fire, c(1:10)),
+  # -- list of climates
+  tar_target(climate_list_fire, create_climate_list(length(ID.climate_fire), 
+                                                     quantile.range = c(0.5, 1))),
+  # -- generate one climate object per iteration with branching
+  tar_target(climate_fire, make_climate(
+    FUNDIV_climate_species, quantiles.in = climate_list_fire[[ID.climate_fire]], 
+    "fire", 10, exclude.in = c("Carpinus_betulus"), 
+    method = "frequency"), pattern = map(ID.climate_fire), iteration = "list"), 
+  
+  # Make species objects
+  # -- First: list all species object to make
+  tar_target(species_list_fire, make_species_list(climate_fire, "fire")),
+  # -- Make a vector of ID for each species to make
+  tar_target(ID.species_fire, species_list_fire$ID.species), 
+  # -- Make the species via branching over ID.species
+  tar_target(species_fire, make_species_rds(
+    fit.list.allspecies, climate_fire, species_list_fire, 
+    ID.species.in = ID.species_fire), 
+    pattern = map(ID.species_fire), iteration = "vector", format = "file"),
+  
+  # Make simulations 
+  # -- Start with a list of forest to simulate
+  tar_target(forest_list_fire, make_forest_list(climate_fire, "fire")), 
+  # -- Make a vector of ID for each forest to simulate
+  tar_target(ID.forest_fire, forest_list_fire$ID.forest),
+  # -- Make simulations till equilibrium
+  tar_target(sim_equilibrium_fire, make_simulations_equilibrium(
+    climate_fire, harv_rules.ref, species_list_fire, forest_list_fire, species_fire, ID.forest_fire), 
+    pattern = map(ID.forest_fire), iteration = "vector", format = "file"),
+  # -- Make simulations with disturbance
+  tar_target(sim_disturbance_fire, make_simulations_disturbance(
+    climate_fire, harv_rules.ref, species_list_fire, forest_list_fire, 
+    species_fire, sim_equilibrium_fire, ID.forest.in = ID.forest_fire, disturbance.df_fire), 
+    pattern = map(ID.forest_fire), iteration = "vector", format = "file"),
+  
+  # Extract results
+  # -- Get functional diversity
+  tar_target(FD_fire, get_FD(forest_list_fire, sim_disturbance_fire, pc1_per_species)),
+  # -- Get resilience metrics
+  tar_target(resilience_fire, get_resilience_metrics(
+    sim_disturbance_fire, disturbance.df_fire, forest_list_fire)),
+  # -- Format data together
+  tar_target(data_model_fire, get_data_model(climate_fire, resilience_fire, FD_fire)),
+  
+  
+  
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Traits -----
