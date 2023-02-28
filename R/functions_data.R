@@ -509,8 +509,9 @@ get_resilience_metrics <- function(sim_disturbance, disturbance.df,
       Beq.i = mean((data.i %>% filter(time < min(disturbance.df$t)))$BA)
       # - Basal area after disturbance
       Bdist.i = (data.i %>% filter(time == max(disturbance.df$t)+1))$BA
-      # - Resistance
-      out$resistance[i] = Beq.i/(Beq.i - Bdist.i)
+      # - Resistance : logit of the percentage of basal area that survived 
+      #out$resistance[i] = Beq.i/(Beq.i - Bdist.i)
+      out$resistance[i] = log((Bdist.i/Beq.i)/(1 - (Bdist.i/Beq.i)))
       
       ## Calculate recovery
       #  - Time at which population recovered fully
@@ -556,12 +557,12 @@ get_resilience_metrics <- function(sim_disturbance, disturbance.df,
 #' @param forest_list df containing info on each forest simulated
 #' @param sim_disturbance vector containing the file names of sim with disturbance
 #' @param pc1_per_species Position of each species along the growth-mortality trade-off
-get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
+get_FD_original <- function(forest_list, sim_disturbance, pc1_per_species){
   
   # Initialize the output
   out <- forest_list %>%
     dplyr::select(ID.forest, ID.climate, combination) %>%
-    mutate(nsp = NA_real_, CWM = NA_real_, FD = NA_real_)
+    mutate(nsp = NA_real_, FD = NA_real_)
   
   
   # Loop on all species combination
@@ -581,10 +582,8 @@ get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
         filter(var == "BAsp") %>%
         filter(time == 1) %>%
         left_join(pc1_per_species, by = "species") %>%
-        summarise(CWM = weighted.mean(pca1, w = value), 
-                  FD = weighted.var(pca1, w = value))
+        summarise(FD = weighted.var(pca1, w = value))
       # Add to the final dataframe
-      out$CWM[i] <- data.i$CWM
       out$FD[i] <- data.i$FD
     }
     
@@ -592,6 +591,100 @@ get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
   
   # Replace NA by 0
   out <- out %>% mutate(FD = ifelse(is.na(FD), 0, FD))
+  
+  # Return output
+  return(out)
+}
+
+#' Get functional diversity from simulations with FD package
+#' @param forest_list df containing info on each forest simulated
+#' @param sim_disturbance vector containing the file names of sim with disturbance
+#' @param pc1_per_species Position of each species along the growth-mortality trade-off
+get_FD_dimension <- function(forest_list, sim_disturbance, pc1_per_species){
+  
+  # Initialize vector of all successful simulations
+  vec.sim = c()
+  
+  # Loop on all species combination
+  for(i in 1:length(sim_disturbance)){
+    
+    # Read simulation i
+    sim.i = readRDS(sim_disturbance[i])
+    
+    # First, verify that equilibrium was reached
+    if(!is.na(sim.i[1, 1])){
+      
+      # Format the output
+      data.i <- tree_format(sim.i) %>%
+        mutate(ID.climate = forest_list$ID.climate[i], 
+               ID.forest = forest_list$ID.forest[i], 
+               ID.community = paste(ID.climate, ID.forest, sep = ".")) %>%
+        filter(var == "BAsp") %>%
+        filter(time == 1) %>%
+        dplyr::select(ID.climate, ID.forest, ID.community, species, value)
+      
+      # Also check we have trait value for all species in the community
+      if(all(data.i$species %in% pc1_per_species$species)){
+        # Add to the final dataframe
+        if(length(vec.sim) == 0) data = data.i
+        else data = rbind(data, data.i)
+        
+        # Increment the counter
+        vec.sim = c(vec.sim, i)
+      }
+    }
+    
+  }
+  
+  # Abundance dataframe
+  abun.df = data %>%
+    spread(key = "species", value = "value") %>% 
+    replace(is.na(.), 0)
+  
+  # Abundance matrix
+  abun.matrix = as.matrix(
+    abun.df %>% dplyr::select(-ID.climate, -ID.forest, -ID.community))
+  rownames(abun.matrix) = abun.df$ID.community
+  
+  # Trait df
+  trait.df = data.frame(species = colnames(abun.matrix)) %>%
+    left_join(pc1_per_species, by = "species") %>%
+    dplyr::select(-species)
+  rownames(trait.df) = colnames(abun.matrix)
+  
+  # Calculate FD per community
+  fd.raw <- dbFD(trait.df, abun.matrix, w.abun = TRUE)
+  
+  # Final dataframe
+  out <- data.frame(
+    ID.forest = forest_list$ID.forest[vec.sim], 
+    ID.climate = forest_list$ID.climate[vec.sim], 
+    combination = forest_list$combination[vec.sim], 
+    FRic = fd.raw$FRic, 
+    FDis = fd.raw$FDis, 
+    CWM = fd.raw$CWM$pca1
+  )
+  
+  # Return output
+  return(out)
+}
+
+#' Get functional diversity from simulations 
+#' @param forest_list df containing info on each forest simulated
+#' @param sim_disturbance vector containing the file names of sim with disturbance
+#' @param pc1_per_species Position of each species along the growth-mortality trade-off
+get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
+  
+  # Get the original FD index
+  FD_original = get_FD_original(forest_list, sim_disturbance, pc1_per_species)
+  
+  # Get the original FD index
+  FD_dimension = get_FD_dimension(forest_list, sim_disturbance, pc1_per_species)
+  
+  # Join the two datasets
+  out = left_join(FD_original, FD_dimension, 
+                  by = c("ID.forest", "ID.climate", "combination")) %>%
+    filter(!is.na(FRic))
   
   # Return output
   return(out)
@@ -622,8 +715,7 @@ get_data_model = function(climate, resilience, FD){
   out = resilience %>%
     left_join(FD, by = c("ID.forest", "ID.climate", "combination")) %>%
     left_join(data.climate, by = "ID.climate") %>%
-    dplyr::select(ID.forest, ID.climate, forest.composition = combination, nsp, 
-                  sgdd, wai, pca1, FD, CWM, resistance, recovery, resilience)
+    rename(forest.composition = combination)
   
   # Return output
   return(out)

@@ -23,7 +23,8 @@ lapply(grep("R$", list.files("R"), value = TRUE), function(x) source(file.path("
 # install if needed and load packages
 packages.in <- c("dplyr", "ggplot2", "matreex", "tidyr", "data.table", 
                  "factoextra", "modi", "sf", "rnaturalearth", "scales", 
-                 "cowplot", "multcomp", "piecewiseSEM", "future")
+                 "cowplot", "multcomp", "piecewiseSEM", "future", "FD", "GGally", 
+                 "statmod")
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
@@ -125,6 +126,56 @@ list(
   tar_target(data_model_storm, get_data_model(climate_storm, resilience_storm, FD_storm)),
   
   
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Make simulations with storm disturbances and random selection -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  # -- generate one climate object per iteration with branching
+  tar_target(climate_storm_random, make_climate(
+    FUNDIV_climate_species, quantiles.in = climate_list_storm[[ID.climate_storm]], 
+    "storm", 10, exclude.in = c("Carpinus_betulus", "Quercus_ilex"), 
+    method = "random"), pattern = map(ID.climate_storm), iteration = "list"), 
+  
+  # Make species objects
+  # -- First: list all species object to make
+  tar_target(species_list_storm_random, make_species_list(climate_storm_random, "storm_random")),
+  # -- Make a vector of ID for each species to make
+  tar_target(ID.species_storm_random, species_list_storm_random$ID.species), 
+  # -- Make the species via branching over ID.species
+  tar_target(species_storm_random, make_species_rds(
+    fit.list.allspecies, climate_storm_random, species_list_storm_random, 
+    ID.species.in = ID.species_storm_random), 
+    pattern = map(ID.species_storm_random), iteration = "vector", format = "file"),
+  
+  # Make simulations 
+  # -- Start with a list of forest to simulate
+  tar_target(forest_list_storm_random, make_forest_list(climate_storm_random, "storm_random")), 
+  # -- Make a vector of ID for each forest to simulate
+  tar_target(ID.forest_storm_random, forest_list_storm_random$ID.forest),
+  # -- Make simulations till equilibrium
+  tar_target(sim_equilibrium_storm_random, make_simulations_equilibrium(
+    climate_storm_random, harv_rules.ref, species_list_storm_random, 
+    forest_list_storm_random, species_storm_random, ID.forest_storm_random), 
+    pattern = map(ID.forest_storm_random), iteration = "vector", format = "file"),
+  # -- Make simulations with disturbance
+  tar_target(sim_disturbance_storm_random, make_simulations_disturbance(
+    climate_storm_random, harv_rules.ref, species_list_storm_random, 
+    forest_list_storm_random, species_storm_random, sim_equilibrium_storm_random, 
+    ID.forest.in = ID.forest_storm_random, disturbance.df_storm), 
+    pattern = map(ID.forest_storm_random), iteration = "vector", format = "file"),
+  
+  # Extract results
+  # -- Get functional diversity
+  tar_target(FD_storm_random, get_FD(
+    forest_list_storm_random, sim_disturbance_storm_random, pc1_per_species)),
+  # -- Get resilience metrics
+  tar_target(resilience_storm_random, get_resilience_metrics(
+    sim_disturbance_storm_random, disturbance.df_storm, forest_list_storm_random)),
+  # -- Format data together
+  tar_target(data_model_storm_random, get_data_model(
+    climate_storm_random, resilience_storm_random, FD_storm_random)),
+  
+  
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Make simulations with fire disturbances -----
@@ -194,72 +245,121 @@ list(
   tar_target(pc1_per_species, get_pc1_per_species(traits)),
   
   # Plot the pca with species traits
-  tar_target(fig_traits_pca, plot_traits_pca(traits, "output/traits.jpg"), 
-            format = "file")
+  tar_target(fig_traits_pca, plot_traits_pca(
+    traits, "output/fig_informative/traits.jpg"), format = "file"),
  
   
   
    
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # # -- Plots for final analyses -----
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # 
-  # # Map of the different climates used for the analysis
-  # tar_target(fig_map_climate, map_climates(
-  #   FUNDIV_climate_species, climate_list, "output/map_climate.jpg"), 
-  #   format = "file"), 
-  # 
-  # # Plot the position of each plot and climate along the sgdd - wai pca
-  # tar_target(fig_pca_climate, plot_pca_climate(
-  #   FUNDIV_climate_species, climate_list, "output/pca_climate.jpg"), 
-  #   format = "file"), 
-  # 
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Informative plots -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+   
+  # Map of the different climates used for the analysis
+  tar_target(fig_map_climates, map_climates(
+   FUNDIV_climate_species, list(storm = climate_list_storm, 
+                                fire = climate_list_fire), 
+   "output/fig_informative/map_climates.jpg"), format = "file"), 
+  
+  # Proportion of species with sensitivity estimation per climate
+  tar_target(fig_prop.species_per_climate_storm, plot_prop.species_per_climate(
+    climate_list_storm, FUNDIV_climate_species, disturbance.in = "storm", 
+   exclude.in = c("Quercus_ilex"), "output/fig_informative/fig_prop_per_clim_storm.jpg"), 
+   format = "file"), 
+  tar_target(fig_prop.species_per_climate_fire, plot_prop.species_per_climate(
+   climate_list_fire, FUNDIV_climate_species, disturbance.in = "fire", 
+   exclude.in = c(), "output/fig_informative/fig_prop_per_clim_fire.jpg"), 
+   format = "file"),
+  
+  # Co-variation between resilience metrics
+  tar_target(fig_covariation_FD_storm, plot_covariation_FD(
+    data_model_storm, "storm", "output/fig_informative/fig_covar_FD_storm.jpg"), 
+    format = "file"),
+  tar_target(fig_covariation_FD_fire, plot_covariation_FD(
+    data_model_fire, "fire", "output/fig_informative/fig_covar_FD_fire.jpg"), 
+    format = "file"),
+  
+  
+  
+  
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Plots for analyses -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  
+  # Plot the effect of FD on resilience and residuals
+  tar_target(fig_FD_resilience_residuals_storm, plot_estimate_and_resid(
+    data_model_storm, "output/fig_analyses/FD_resilience/storm"), format = "file"),
+  tar_target(fig_FD_resilience_residuals_fire, plot_estimate_and_resid(
+    data_model_fire, "output/fig_analyses/FD_resilience/fire"), format = "file"),
   # # Plot resilience vs FD anc CWM
-  # tar_target(fig_resilience_vs_cmw_and_fd, plot_resilience_vs_CMW_and_FD(
-  #   data_model, "output/fig_resilience_vs_CMW_and_FD.jpg"), format = "file"),
+  # tar_target(fig_resilience_vs_cmw_and_fd_storm, plot_resilience_vs_CMW_and_FD(
+  #  data_model_storm, "output/fig_analyses/fig_resilience_vs_CMW_and_FD_storm.jpg"), 
+  #  format = "file"),
+  # tar_target(fig_resilience_vs_cmw_and_fd_storm_random, plot_resilience_vs_CMW_and_FD(
+  #   data_model_storm_random, "output/fig_analyses/fig_resilience_vs_CMW_and_FD_storm_random.jpg"), 
+  #   format = "file"),
+  # tar_target(fig_resilience_vs_cmw_and_fd_fire, plot_resilience_vs_CMW_and_FD(
+  #   data_model_fire, "output/fig_analyses/fig_resilience_vs_CMW_and_FD_fire.jpg"), 
+  #   format = "file"),
   # 
   # # Plot effect of FD and CWM on resilience along climatic gradient
-  # tar_target(fig_CMW_and_FD_effect_climate, plot_CMW_and_FD_effect_climate(
-  #   data_model, "output/fig_CMW_and_FD_effect_climate.jpg"), format = "file"),
+  # tar_target(fig_CMW_and_FD_effect_climate_storm, plot_CMW_and_FD_effect_climate(
+  #  data_model_storm, "output/fig_analyses/fig_CMW_and_FD_effect_climate_storm.jpg"), 
+  #  format = "file"),
+  # tar_target(fig_CMW_and_FD_effect_climate_storm_random, plot_CMW_and_FD_effect_climate(
+  #   data_model_storm_random, "output/fig_analyses/fig_CMW_and_FD_effect_climate_storm_random.jpg"), 
+  #   format = "file"),
+  # tar_target(fig_CMW_and_FD_effect_climate_fire, plot_CMW_and_FD_effect_climate(
+  #   data_model_fire, "output/fig_analyses/fig_CMW_and_FD_effect_climate_fire.jpg"), 
+  #   format = "file"),
   # 
   # # Plot resilience vs climate
-  # tar_target(fig_resilience_vs_climate, plot_resilience_vs_climate(
-  #   data_model, "output/fig_resilience_vs_climate.jpg"), format = "file"), 
-  # 
-  # # Plot FD and CWM along the climatic gradient
-  # tar_target(fig_FD_and_CWM_vs_climate, plot_FD_and_CWM_vs_climate(
-  #   data_model, "output/fig_FD_and_CWM_vs_climate.jpg"), 
+  # tar_target(fig_resilience_vs_climate_storm, plot_resilience_vs_climate(
+  #  data_model_storm, "output/fig_analyses/fig_resilience_vs_climate_storm.jpg"), 
+  #  format = "file"), 
+  # tar_target(fig_resilience_vs_climate_storm_random, plot_resilience_vs_climate(
+  #   data_model_storm_random, "output/fig_analyses/fig_resilience_vs_climate_storm_random.jpg"), 
+  #   format = "file"), 
+  # tar_target(fig_resilience_vs_climate_fire, plot_resilience_vs_climate(
+  #   data_model_fire, "output/fig_analyses/fig_resilience_vs_climate_fire.jpg"), 
   #   format = "file"), 
   # 
-  # # Make a network analysis with peacewise SEM
-  # tar_target(fig_sem, plot_sem(data_model, "output/fig_sem.jpg"), 
-  #            format = "file"), 
-  # 
-  # 
-  # 
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # # -- Plots for final analyses -----
-  # #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # 
-  # # changes in FW and CWM over time
-  # tar_target(fig_cwm_and_fd_overtime, plot_cwm_fd_overtime(
-  #   sim_equilibrium, forest_list, pc1_per_species, 
-  #   "output/exploratory/cwm_and_fd_over_time.jpg"), format = "file"), 
-  # 
-  # # Functional density distribution of random vs selected communities
-  # tar_target(fig_pca1_selection_vs_random, plot_pca1_selection_vs_random(
-  #   climate, pc1_per_species, "output/exploratory/fig_pca1_selection_vs_random.jpg"), 
-  #   format = "file"), 
-  # 
-  # # Proportion of species with sensitivity estimation per climate
-  # tar_target(fig_prop.species_per_climate_storm, plot_prop.species_per_climate(
-  #   climate_list, FUNDIV_climate_species, disturbance.in = "storm", 
-  #   exclude.in = c("Quercus_ilex"), "output/exploratory/fig_prop_per_clim_storm.jpg"), 
-  #   format = "file"), 
-  # tar_target(fig_prop.species_per_climate_fire, plot_prop.species_per_climate(
-  #   climate_list, FUNDIV_climate_species, disturbance.in = "fire", 
-  #   exclude.in = c(), "output/exploratory/fig_prop_per_clim_fire.jpg"), 
-  #   format = "file")
+  # Make a network analysis with peacewise SEM
+  tar_target(fig_sem_storm_FD, plot_sem(
+    data_model_storm, "FD", "output/fig_analyses/sem/storm_FD.jpg"), format = "file"), 
+  tar_target(fig_sem_storm_FDis, plot_sem(
+    data_model_storm, "FDis", "output/fig_analyses/sem/storm_FDis.jpg"), format = "file"), 
+  tar_target(fig_sem_storm_FRic, plot_sem(
+    data_model_storm, "FRic", "output/fig_analyses/sem/storm_FRic.jpg"), format = "file"), 
+  
+  
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Exploratory plots -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+   
+  # changes in FW and CWM over time
+  tar_target(fig_cwm_and_fd_overtime_storm, plot_cwm_fd_overtime(
+   sim_equilibrium_storm, forest_list_storm, pc1_per_species, 
+   "output/fig_exploratory/cwm_and_fd_over_time_storm.jpg"), format = "file"), 
+  tar_target(fig_cwm_and_fd_overtime_fire, plot_cwm_fd_overtime(
+    sim_equilibrium_fire, forest_list_fire, pc1_per_species, 
+    "output/fig_exploratory/cwm_and_fd_over_time_fire.jpg"), format = "file"), 
+  
+  # Functional density distribution of random vs selected communities
+  tar_target(fig_pca1_selection_vs_random_storm, plot_pca1_selection_vs_random(
+   climate_storm, pc1_per_species, 
+   "output/fig_exploratory/fig_pca1_selection_vs_random_storm.jpg"), format = "file"), 
+  tar_target(fig_pca1_selection_vs_random_fire, plot_pca1_selection_vs_random(
+    climate_fire, pc1_per_species, 
+    "output/fig_exploratory/fig_pca1_selection_vs_random_fire.jpg"), format = "file")
+  
+  
+  
+  
+  
   
 )
 

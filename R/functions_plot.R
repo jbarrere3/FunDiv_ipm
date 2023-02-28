@@ -16,6 +16,9 @@
 
 
 
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# -- Informative plots -----
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 
@@ -150,63 +153,221 @@ plot_pca_climate = function(FUNDIV_climate_species, climate.list, file.in){
 
 
 
-#' Function to make a map of Fundiv plots with different climates
-#' @param FUNDIV_climate_species Data with species presence and climate per plot
-#' @param climate.list list of range (0 to 1) along the pca axis hot/dry to cold/wet
-#' @param file.in name including path of the file to save
-map_climates = function(FUNDIV_climate_species, climate.list, file.in){
+#' function to map the spatial distribution of storm and fire disturbed pop
+#' @param FUNDIV_climate_species FUNDIV data
+#' @param climate.list.in list of climate list objects, where names are disturbances
+#' @param file.in Name of the file to save including path
+map_climates = function(FUNDIV_climate_species, climate.list.in, file.in){
   
-  # Create directory if needed 
+  # Create directory of file.in if it doesn't exist
   create_dir_if_needed(file.in)
   
-  # Initialize the data for plotting
-  data.in = FUNDIV_climate_species %>%
-    mutate(climate = "none") %>%
-    dplyr::select(plotcode, longitude, latitude, pca1, climate) %>%
-    st_as_sf(coords = c("longitude", "latitude"), crs = 4326, agr = "constant")
+  # -- 
+  # Start by making the climate pca
+  # -- 
   
-  # Loop on all climates to specify which plot is in which climate
-  for(i in 1:length(names(climate.list))){
+  # - Make PCA 
+  pca <- prcomp(FUNDIV_climate_species[, c("sgdd", "wai")], 
+                center = TRUE, scale = TRUE)
+  
+  # Number of categories for plotting
+  n.cat = 15
+  
+  
+  # - Extract the coordinates of the ndividuals on pca axis
+  res.ind <- data.frame(plot = FUNDIV_climate_species$plotcode, 
+                        pca1 = FUNDIV_climate_species$pca1)  %>%
+    mutate(pca1_cut = cut(pca1, breaks = seq(min(pca1), max(pca1), length.out = n.cat)), 
+           pca1_min = as.numeric(gsub("\\(", "", gsub("\\,.+", "", pca1_cut))), 
+           pca1_max = as.numeric(gsub(".+\\,", "", gsub("\\]", "", pca1_cut))), 
+           pca1_median = (pca1_min + pca1_max)/2) %>%
+    filter(!is.na(pca1_cut))
+  
+  # - Extract the coordinates of the variables on pca axis and classify by category
+  res.var <- data.frame(var = rownames(get_pca_var(pca)[[1]]), 
+                        # Negative because inverse of pca in original data
+                        pca1 = -get_pca_var(pca)[[1]][, 1]) %>%
+    mutate(var.pos = c(1:dim(.)[1]))
+  
+  # Plot the arrows of the first PCA axis
+  plot.var = res.var %>%
+    ggplot(aes(x = var.pos, xend = var.pos, y = 0, yend = pca1)) + 
+    geom_segment(arrow = arrow(length = unit(0.1, "cm"))) + 
+    scale_x_continuous(breaks = res.var$var.pos, 
+                       labels = res.var$var, 
+                       limits = c(0.5, 2.5)) + 
+    xlab("") + geom_hline(yintercept = 0, linetype = "dashed") +
+    ylab(paste0("PCA1 (", round(summary(pca)$importance[2, 1]*100, digits = 2), "%)")) + 
+    coord_flip() + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank()) 
+  
+  # Plot the distribution of plots along the pca axis
+  plot.ind = res.ind %>%
+    group_by(pca1_median) %>%
+    summarize(n = n()) %>%
+    ggplot(aes(x = pca1_median, y = n, fill = pca1_median)) +
+    geom_bar(color = "black", stat = "identity") +
+    scale_fill_gradientn(colors = colorRampPalette(c("blue", "orange"))(n.cat)) +
+    ylab("Number of\nNFI plots") + 
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          axis.text.x = element_blank(), 
+          axis.title.x = element_blank(), 
+          axis.ticks.x = element_blank(), 
+          legend.position = "none") 
+  
+  # Plot the pca climate
+  plot.pca = plot_grid(plot.ind, plot.var, ncol = 1, align = "v", 
+                       labels = c("(a)", ""), rel_heights = c(1, 0.5))
+  
+  # Memorize the color vector 
+  color.data = res.ind %>%
+    dplyr::select(pca1_min, pca1_max, pca1_median) %>%
+    arrange(pca1_min) %>%
+    distinct() %>%
+    mutate(color = colorRampPalette(c("blue", "orange"))(dim(.)[1]))
+  
+  
+  
+  # -- 
+  # Make maps for each disturbance type
+  # -- 
+  
+  # Initialize output plotlist
+  maplist.out = list()
+  
+  # Loop on all disturbance types
+  for(i in 1:length(names(climate.list.in))){
     
-    # Identify the range of pca1 associated with climate i
-    range.i = as.numeric(quantile(data.in$pca1, probs = climate.list[[i]]))
+    # Disturbance i
+    dist.i = names(climate.list.in)[i]
     
-    # Modify data.in for plots that are in the range
-    data.in = data.in %>%
-      mutate(climate = ifelse(pca1 > range.i[1] & pca1 < range.i[2], 
-                              names(climate.list)[i], climate))
+    # Initialize the data for disturbance i
+    data.i = res.ind %>%
+      left_join((FUNDIV_climate_species %>% 
+                   dplyr::select(plot = plotcode, longitude, latitude)), 
+                by = "plot") %>%
+      mutate(climate = 0) %>%
+      dplyr::select(plot, longitude, latitude, pca1, pca1_min, pca1_max, 
+                    pca1_median, climate) %>%
+      st_as_sf(coords = c("longitude", "latitude"), crs = 4326, agr = "constant")
+    
+    # Loop on all climates to specify which plot is in which climate
+    for(j in 1:length(names(climate.list.in[[i]]))){
+      
+      # Identify the range of pca1 associated with climate i
+      range.j = as.numeric(quantile(data.i$pca1, probs = climate.list.in[[i]][[j]]))
+      
+      # Modify data.i for plots that are in the range
+      data.i = data.i %>%
+        mutate(climate = ifelse(pca1 > range.j[1] & pca1 < range.j[2], j, climate))
+    }
+    
+    # restrict color dataset to the climatic range studied
+    color.data.i = color.data %>%
+      filter(pca1_median %in% subset(data.i, climate != 0)$pca1_median)
+    
+    # Convert climate in a factor
+    data.i = data.i %>%
+      mutate(climate = factor(climate, levels = as.character(c(0:max(.$climate)))))
+    
+    # Histogram adapted to the climatic gradient
+    hist.i = res.ind %>%
+      group_by(pca1_median) %>%
+      summarize(n = n()) %>%
+      ggplot(aes(x = pca1_median, y = n, fill = pca1_median)) +
+      geom_bar(color = "black", stat = "identity") +
+      scale_fill_gradientn(colors = (
+        color.data %>% mutate(
+          color = ifelse(pca1_median %in% color.data.i$pca1_median, color, "gray"))
+      )$color) +
+      ylab("Number of\nNFI plots") + 
+      theme(panel.background = element_rect(color = "black", fill = "white"), 
+            panel.grid = element_blank(), 
+            axis.text = element_blank(), 
+            axis.title = element_blank(), 
+            axis.ticks = element_blank(), 
+            legend.position = "none") 
+    
+    # Map for disturbance i
+    map.i <- ne_countries(scale = "medium", returnclass = "sf") %>%
+      ggplot(aes(geometry = geometry)) +
+      geom_sf(fill = "#343A40", color = "gray", show.legend = F, size = 0.2) + 
+      geom_sf(data = data.i, aes(color = climate), size = 0.01, alpha = 0.7) +
+      scale_color_manual(
+        values = c("gray", colorRampPalette(
+          c(color.data.i$color[1], color.data.i$color[dim(color.data.i)[1]]))(
+            length(names(climate.list.in[[i]]))+1))) +
+      coord_sf(xlim = c(-10, 32), ylim = c(36, 71)) +
+      ggtitle(paste0(dist.i, "-disturbed\ncommunities")) +
+      theme(panel.background = element_rect(color = 'black', fill = 'white'), 
+            panel.grid = element_blank(), 
+            legend.position = "none", 
+            plot.title = element_text(hjust = 0.5)) +
+      annotation_custom(ggplotGrob(hist.i), 
+                        xmin = -10, xmax = 4, ymin = 62, ymax = 72)
+    
+    # Add map to plotlist
+    eval(parse(text = paste0("maplist.out$", dist.i, " = map.i")))
   }
   
-  # Final formatting
-  data.in = data.in  %>% 
-    filter(climate != "none") %>%
-    # Factorize climate list for plotting
-    mutate(climate = factor(climate, levels = names(climate.list)))
+  # Assemble the maps
+  plot.map = plot_grid(
+    plotlist = maplist.out, nrow = 1, align = "h", 
+    labels = paste0("(", letters[c(2:(length(names(climate.list.in))+1))], ")"))
   
-  ## - Final plot
-  plot.out <- ne_countries(scale = "medium", returnclass = "sf") %>%
-    ggplot(aes(geometry = geometry)) +
-    geom_sf(fill = "#343A40", color = "gray", show.legend = F, size = 0.2) + 
-    geom_sf(data = (data.in %>% filter(climate != "none")), 
-            aes(color = climate), size = 0.01, alpha = 0.7) +
-    scale_color_manual(
-      values = colorRampPalette(c("blue", "red"))(length(names(climate.list)))) +
-    coord_sf(xlim = c(-10, 32), ylim = c(36, 71)) +
-    theme(panel.background = element_rect(color = 'black', fill = 'white'), 
-          panel.grid = element_blank(),
-          legend.title = element_blank(),
-          legend.key = element_blank())
+  # Final plot
+  plot.out = plot_grid(plot.pca, plot.map, nrow = 1, rel_widths = c(0.6, 1), 
+                       scale = c(0.8, 1))
+  
+  
+  # Save plot i
+  ggsave(file.in, plot.out, width = 25, height = 13, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # Return name of the file
+  return(file.in)
+}
+
+
+
+#' Function to show co-variations between resilience metrics
+#' @param data_model Data from simulations formatted
+#' @param disturbance.in "storm" or "fire" (just for title and color)
+#' @param file.in Name of the file to save, including path
+plot_covariation_FD = function(data_model, disturbance.in, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Make the plot
+  plot.out =  data_model %>%
+    dplyr::select(FD, FRic, FDis, CWM, nsp) %>%
+    ggpairs(aes(alpha = 0.4)) + 
+    ggtitle(paste0("Covariations between FD metrics for ", 
+                   disturbance.in, "-disturbed communities")) +
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          legend.key = element_blank(), 
+          strip.background = element_blank(), 
+          strip.text = element_text(face = "bold"), 
+          legend.title = element_blank(), 
+          legend.position = "top", 
+          plot.title = element_text(hjust = 0.5))
   
   # Save the plot
-  ggsave(file.in, plot.out, width = 14, height = 14, 
+  ggsave(file.in, plot.out, width = 20, height = 18, 
          units = "cm", dpi = 600, bg = "white")
   
-  # Return the name of the file
+  # Return name of the file generated 
   return(file.in)
   
 }
 
-
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# -- Plots for analyses -----
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
 #' Plot the effect of functional strategy on resilience metrics (H1)
@@ -245,8 +406,8 @@ plot_resilience_vs_CMW_and_FD = function(data_models, file.in){
                data = subset(data.in, variable == var.i))
     
     # Data fit
-    data_fit.i = expand.grid(CWM.scaled = seq(from = min(data.in$CWM.scaled), 
-                                              to = max(data.in$CWM.scaled), 
+    data_fit.i = expand.grid(CWM.scaled = seq(from = min(data.in$CWM.scaled, na.rm = TRUE), 
+                                              to = max(data.in$CWM.scaled, na.rm = TRUE), 
                                               length.out = 1000), 
                              FD.scaled = quantile(
                                subset(data.in, variable == var.i)$FD.scaled, 
@@ -421,104 +582,6 @@ plot_resilience_vs_climate = function(data_models, file.in){
 }
 
 
-#' Plot the effect of climate on functional strategy and diversity
-#' @param data_models data with functional diversity, resilience metrics
-#' @param file.in name including path of the file to save
-plot_FD_and_CWM_vs_climate = function(data_models, file.in){
-  
-  # Create directory if needed
-  create_dir_if_needed(file.in)
-  
-  # Format data
-  data.in = data_models %>%
-    filter(resistance > 0) %>%
-    gather(key = "variable", value = "value",  
-           "FD", "CWM") %>%
-    mutate(ID.climate = factor(ID.climate, levels = unique(.$ID.climate))) %>%
-    filter(is.finite(value))
-  
-  # Initialize list of plots
-  list_plots = list()
-  
-  # Loop on all variables tested
-  for(i in 1:length(unique(data.in$variable))){
-    
-    # Variable i
-    var.i = unique(data.in$variable)[i]
-    
-    # Make model
-    mod.i = aov(value ~ ID.climate, 
-                data = subset(data.in, variable == var.i))
-    
-    # Data for plotting
-    data.i = data.in %>%
-      # Only keep the right variable
-      filter(variable == var.i)
-    
-    # Data with the significance letters
-    data.labels.i = data.i %>%
-      # Calculate the 75% quantile
-      group_by(pca1) %>%
-      summarize(label.pos = max(value)) %>%
-      # Add 10% of max value 
-      mutate(label.pos = label.pos + 0.2*quantile(data.i$value, 0.975)) %>%
-      left_join(
-        data.frame(
-          pca1 = unique(data.in$pca1), 
-          label = as.character(cld(glht(mod.i, linfct=mcp(ID.climate="Tukey")))$mcletters$Letters)
-        ), 
-        by = "pca1") 
-    
-    # Make plot i
-    plot.i = data.i %>%
-      group_by(ID.climate, pca1) %>%
-      summarize(mean = mean(value, na.rm = TRUE), 
-                lwr = quantile(value, 0.025), 
-                upr = quantile(value, 0.975)) %>%
-      mutate(climate = paste0("climate.", ID.climate)) %>%
-      ggplot(aes(x = pca1, y = mean, fill = climate)) +
-      geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0) +
-      geom_point(shape = 21, color = "black", size = 2) + 
-      scale_fill_manual(
-        values = colorRampPalette(c("blue", "red"))(length(unique(data.in$ID.climate)))) + 
-      geom_text(data = (data.labels.i %>% mutate(climate = NA)),
-                aes(label = label, y = label.pos), 
-                size = 6, color = "black") + 
-      xlab("CLIMATE") + ylab(toupper(var.i)) + 
-      ggtitle(paste0(
-        "F = ", round(as.numeric(summary(mod.i)[[1]][["F value"]][1]), digits = 1), 
-        ", ", scales::pvalue(as.numeric(summary(mod.i)[[1]][["Pr(>F)"]][1]), 
-                             accuracy = 0.01, add_p = TRUE)
-      )) +
-      theme(panel.background = element_rect(fill = "white", color = "black"), 
-            panel.grid = element_blank(), 
-            legend.position = "none", 
-            legend.title = element_blank(), 
-            axis.text.x = element_blank(), 
-            axis.ticks.x = element_blank(), 
-            legend.key = element_blank())
-    
-    # Add to the output lists
-    eval(parse(text = paste0("list_plots$", var.i, " = plot.i")))
-  }
-  
-  # Add legend to the output list
-  list_plots$legend = get_legend(plot.i + theme(legend.position = "left", 
-                                                legend.text = element_text(size = 16)))
-  
-  # Final plot
-  plot.out = plot_grid(plotlist = list_plots, align = "hv", scale = 0.9, nrow = 1,
-                       labels = c(letters[c(1:(length(names(list_plots)) - 1))], ""))
-  
-  # Save the plot
-  ggsave(file.in, plot.out, width = 18, height = 6, units = "cm", 
-         dpi = 600, bg = "white")
-  
-  # return the name of the file
-  return(file.in)
-  
-}
-
 
 #' Plot the effects of CWM and FD along climatic gradient
 #' @param data_models data with functional diversity, resilience metrics
@@ -611,38 +674,42 @@ plot_CMW_and_FD_effect_climate = function(data_models, file.in){
 
 #' Analyse the data with a structural equation model approach
 #' @param data_model formatted model output
+#' @param FD_metric Functional diversity metric to choose ("FDis", "FRic or "FD")
 #' @param file.in name of the file to save, including path
-plot_sem = function(data_model, file.in){
+plot_sem = function(data_model, FD_metric = "FD", file.in){
   
   # Create directory if needed
   create_dir_if_needed(file.in)
   
-  # Make the sem model
-  
   # -- Start by formatting data before fitting the model
   data.in = data_model %>%
-    # Remove invalid data
-    filter(resistance > 0) %>%
     # Log transform resilience metrics to fit normality assumption
-    mutate(resistance.log = log(resistance), 
+    mutate(resistance.log = resistance, 
            recovery.log = log(recovery), 
            resilience.log = log(resilience)) %>%
+    # Select the right FD metric
+    rename("FD_chosen" = FD_metric) %>%
     # scale all variables used in models
     mutate(climate_scaled = as.numeric(scale(pca1, center = TRUE, scale = TRUE)), 
-           FD_scaled = as.numeric(scale(FD, center = TRUE, scale = TRUE)), 
+           FD_scaled = as.numeric(scale(FD_chosen, center = FALSE, scale = TRUE)), 
            CWM_scaled = as.numeric(scale(CWM, center = TRUE, scale = TRUE)), 
+           SR_scaled = as.numeric(scale(nsp, center = TRUE, scale = TRUE)),
            resistance.log_scaled = as.numeric(scale(resistance.log, center = TRUE, scale = TRUE)), 
            recovery.log_scaled = as.numeric(scale(recovery.log, center = TRUE, scale = TRUE)), 
            resilience.log_scaled = as.numeric(scale(resilience.log, center = TRUE, scale = TRUE)))
   
+  
   # -- Make model
   mod_sem = psem(
-    lm(FD_scaled ~ climate_scaled, data = data.in), 
+    glm(FD_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
+        data = data.in), 
     lm(CWM_scaled ~ climate_scaled, data = data.in), 
-    lm(resistance.log_scaled ~ FD_scaled + CWM_scaled, data = data.in), 
-    lm(recovery.log_scaled ~ FD_scaled + CWM_scaled + climate_scaled, data = data.in), 
+    lm(resistance.log_scaled ~ FD_scaled + CWM_scaled + SR_scaled, 
+       data = data.in), 
+    lm(recovery.log_scaled ~ FD_scaled + CWM_scaled + climate_scaled + SR_scaled, 
+       data = data.in), 
     lm(resilience.log_scaled ~ resistance.log_scaled + recovery.log_scaled + 
-         FD_scaled + CWM_scaled + climate_scaled, data = data.in)
+         FD_scaled + CWM_scaled + climate_scaled + SR_scaled, data = data.in)
   )
   
   
@@ -654,22 +721,18 @@ plot_sem = function(data_model, file.in){
   # -- Prepare some parameters about the box to drax
   box.height = 2
   box.width = 4
-  box.width.spacing = 2
   box.height.spacing = 2
   
   # -- Make a dataset to plot the box with the text
   data.plot.box = data.frame(
-    text = c("climate", "FD", "CWM", "recovery", "resistance", "resilience"), 
-    position = c("c", "l", "r", "l", "r", "c"), 
-    height.level = c(4, 3, 3, 2, 2, 1)) %>%
+    text = c("climate", "FD", "CWM", "SR", "recovery", "resistance", "resilience"), 
+    center.x = c(0, -4, 4, -10, 1, -7, -2), 
+    height.level = c(4, 3, 3, 3, 2, 2, 1)) %>%
     mutate(ymin = (height.level - 0.5*box.height)*(box.height + box.height.spacing), 
            ymax = ymin + box.height,
-           xmin = case_when(position == "c" ~ -box.width/2, 
-                            position == "l" ~ -(box.width + 0.5*box.width.spacing), 
-                            position == "r" ~ box.width.spacing*0.5), 
-           xmax = xmin + box.width,
-           center.y = 0.5*(ymin + ymax), 
-           center.x = 0.5*(xmin + xmax))
+           xmin = center.x - box.width/2, 
+           xmax = center.x + box.width/2,
+           center.y = 0.5*(ymin + ymax))
   
   # -- Plot the boxes
   plot.box = data.plot.box %>%
@@ -681,14 +744,27 @@ plot_sem = function(data_model, file.in){
           axis.ticks = element_blank(), 
           axis.text = element_blank(), 
           panel.background = element_rect(fill = "white", color = "black"), 
-          legend.position = "none",
-          panel.grid = element_blank())
+          panel.grid = element_blank(), 
+          legend.key = element_blank())
   
-  # -- Extract model results and prepare for plotting
-  data.plot.arrow = as.data.frame(summary(mod_sem, .progressBar = F)$coefficients) %>%
-    # Extract variable of interest
-    dplyr::select(var.resp = Response, var.exp = Predictor, 
-                  est = Estimate, p = P.Value) %>%
+  
+  # Loop on all models to extract output
+  for(i in 1:(length(names(mod_sem)) - 1)){
+    
+    # model output for model i
+    data.plot.arrow.i = data.frame(
+      var.resp = as.character(summary(mod_sem[[i]])$terms[[2]]), 
+      var.exp = as.character(rownames(summary(mod_sem[[i]])$coefficients)[-1]), 
+      est = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 1]), 
+      p = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 4])
+    )
+    # Add to final output
+    if(i == 1) data.plot.arrow = data.plot.arrow.i
+    else data.plot.arrow = rbind(data.plot.arrow, data.plot.arrow.i)
+  }
+  
+  # -- Prepare model outputs for plotting
+  data.plot.arrow = data.plot.arrow %>%
     # simplify the name of variables
     mutate(var.exp = gsub("\\..+", "", gsub("\\_.+", "", var.exp)), 
            var.resp = gsub("\\..+", "", gsub("\\_.+", "", var.resp))) %>%
@@ -702,30 +778,22 @@ plot_sem = function(data_model, file.in){
                  dplyr::select(var.exp = text, level.exp = height.level, 
                                center.x.exp = center.x, center.y.exp = center.y)), 
               by = "var.exp") %>%
-    # Difference between the two boxes connected by the arrow
-    mutate(level.diff = level.exp - level.resp) %>%
-    # Calculate intermediate height when level difference is 2
-    mutate(height.mid = case_when(
-      level.diff == 2 & level.exp == 4 ~ center.y.resp + 0.5*box.height + 0.5*box.height.spacing, 
-      level.diff == 2 & level.exp == 3 ~ center.y.exp - 0.5*box.height - 0.7*box.height.spacing, 
-      TRUE ~ NA_real_
-    )) %>%
-    # Slightly move the center x of response to make arrows visible
-    mutate(center.x.resp = case_when(
-      center.x.resp != center.x.exp ~ center.x.resp + 0.05*center.x.exp, 
-      TRUE ~ center.x.resp
-    )) %>%
-    # Slightly move the center x of explanatory when level diff == 2 to be more visible
-    mutate(center.x.exp = case_when(
-      level.diff == 2 & level.exp == 3 ~ center.x.exp*0.97, 
-      level.diff == 1 & level.exp == 3 ~ center.x.exp*1.05,
-      TRUE ~ center.x.exp
-    )) %>%
+    # Add start and end of each arrow
+    mutate(
+      arrow.beg.y = ifelse((var.exp %in% c("SR", "CWM") & var.resp == "resilience"),
+                           center.y.resp, (center.y.exp - 0.5*box.height)), 
+      arrow.beg.x = center.x.exp, 
+      arrow.end.y = ifelse((var.exp %in% c("SR", "CWM") & var.resp == "resilience"),
+                           center.y.resp, (center.y.resp + 0.5*box.height)), 
+      arrow.end.x = case_when(
+        (var.exp == "SR" & var.resp == "resilience") ~ (center.x.resp - 0.5*box.width), 
+        (var.exp == "CWM" & var.resp == "resilience") ~ (center.x.resp + 0.5*box.width),
+        TRUE ~ center.x.resp)) %>%
     # Report significance, sign and absolute value of estimate
     mutate(signif = ifelse(p <= 0.05, "yes", "no"), 
            sign = ifelse(est < 0, "negative", "positive"), 
            est.abs = abs(est), 
-           est.abs.cat = case_when(
+           magnitude = case_when(
              est.abs <= quantile(est.abs, 0.33) ~ "low", 
              est.abs > quantile(est.abs, 0.33) & 
                est.abs <= quantile(est.abs, 0.66) ~ "mid", 
@@ -734,32 +802,17 @@ plot_sem = function(data_model, file.in){
   
   # -- plot the box with arrows
   plot.out = plot.box + 
-    # direct arrows for difference in levels lower or higher than 2
-    geom_segment(data = subset(data.plot.arrow, level.diff != 2), 
-                 aes(x = center.x.exp, xend = center.x.resp, 
-                     y = center.y.exp - 0.5*box.height, 
-                     yend = center.y.resp + 0.5*box.height, 
-                     size = est.abs.cat, linetype = signif, color = sign), 
-                 arrow = arrow(length = unit(0.15, "cm")), 
-                 type = "closed") + 
-    # Segments and arrow for difference in levels of 2
-    # -- first vertical segment
-    geom_segment(data = subset(data.plot.arrow, level.diff == 2), 
+    # Vertical segment
+    geom_segment(data = subset(data.plot.arrow, var.exp %in% c("SR", "CWM") & 
+                                 var.resp == "resilience"), 
                  aes(x = center.x.exp, xend = center.x.exp, 
-                     y = center.y.exp - 0.5*box.height, 
-                     yend = height.mid, 
-                     size = est.abs.cat, linetype = signif, color = sign)) + 
-    # -- second segment, horizontal
-    geom_segment(data = subset(data.plot.arrow, level.diff == 2), 
-                 aes(x = center.x.exp, xend = center.x.resp, 
-                     y = height.mid, yend = height.mid, 
-                     size = est.abs.cat, linetype = signif, color = sign)) + 
-    # -- third: vertical arrow
-    geom_segment(data = subset(data.plot.arrow, level.diff == 2), 
-                 aes(x = center.x.resp, xend = center.x.resp, 
-                     y = height.mid, 
-                     yend = center.y.resp + 0.5*box.height, 
-                     size = est.abs.cat, linetype = signif, color = sign), 
+                     y = center.y.exp - 0.5*box.height, yend = center.y.resp, 
+                     size = magnitude, linetype = signif, color = sign)) + 
+    # Arrows
+    geom_segment(data = data.plot.arrow, 
+                 aes(x = arrow.beg.x, xend = arrow.end.x, 
+                     y = arrow.beg.y, yend = arrow.end.y, 
+                     size = magnitude, linetype = signif, color = sign), 
                  arrow = arrow(length = unit(0.15, "cm")), 
                  type = "closed") + 
     # -- scale linetype, color and size
@@ -767,8 +820,9 @@ plot_sem = function(data_model, file.in){
     scale_linetype_manual(values = c(`yes` = "solid", `no` = "dashed")) + 
     scale_size_manual(values = c(`low` = 0.3, `mid` = 0.6, `high` = 1.1))
   
+  
   # - Save the plot
-  ggsave(file.in, plot.out, width = 10, height = 16, units = "cm", dpi = 600, bg = "white")
+  ggsave(file.in, plot.out, width = 19, height = 12, units = "cm", dpi = 600, bg = "white")
   
   # return the name of all the plots made
   return(file.in)
@@ -777,11 +831,143 @@ plot_sem = function(data_model, file.in){
 
 
 
+#' Function to estimate and residuals of different models testing the effect 
+#' of FD on resilience metrics
+#' @param data_model Data formatted to fit models
+#' @param dir.in Directory where to save the different plots
+plot_estimate_and_resid = function(data_model, dir.in){
+  
+  # Pre-formatting
+  data.in = data_model %>%
+    mutate(monosp = ifelse(nsp == 1, 1, 0))
+  
+  # List of models
+  model.list = list(
+    model1 = list(var = c("FD", "CWM", "nsp")), 
+    model2 = list(var = c("FRic", "CWM", "nsp")), 
+    model3 = list(var = c("FDis", "CWM", "nsp")), 
+    model4 = list(var = c("FD", "CWM", "monosp")), 
+    model5 = list(var = c("FRic", "CWM", "monosp")), 
+    model6 = list(var = c("FDis", "CWM", "monosp"))
+  )
+  
+  # Initialize output (vector of files created)
+  out = c()
+  
+  # Vector of response variables for which to run models
+  response.vec = c("resilience", "resistance", "recovery")
+  
+  # Loop on all possible variables
+  for(i in 1:length(response.vec)){
+    
+    # Initialize plot list for response variable i
+    plot.list.i = list()
+    
+    # Loop on all models
+    for(j in 1:length(names(model.list))){
+      
+      # Variables to scale
+      var.to.scale.j = model.list[[j]]$var[which(model.list[[j]]$var != "monosp")]
+      
+      # Scale data for models ij
+      data.ij = cbind(data.in[, response.vec], 
+                      scale(data.in[, var.to.scale.j]))
+      
+      # Add variables not to scale
+      if("monosp" %in% model.list[[j]]$var) data.ij$monosp = data.in$monosp 
+      
+      
+      # Write model 
+      eval(parse(text = paste0(
+        "model.ij = lm(", response.vec[i], " ~ ", 
+        paste(model.list[[j]]$var, collapse = " + "), 
+        ", data = data.ij)"
+      )))
+      
+      # Extract estimates and confidence interval
+      est.ij = data.frame(var = rownames(confint(model.ij)), 
+                          est = coef(model.ij), 
+                          est.low = confint(model.ij)[, 1], 
+                          est.high = confint(model.ij)[, 2]) %>%
+        filter(var != "(Intercept)") %>%
+        mutate(signif = case_when(est.low > 0 ~ "yes", 
+                                  est.high < 0 ~ "yes", 
+                                  TRUE ~ "no"))
+      
+      # Plot the histogram of residuals
+      plot.residuals.distr.ij = data.frame(residuals = model.ij$residuals) %>%
+        ggplot(aes(x = residuals)) + 
+        geom_histogram(color = "gray", fill = "black") +
+        labs(title='Residuals\ndistribution plot', x='Residuals', y='') +
+        theme(panel.background = element_rect(color = "black", fill = "white"), 
+              panel.grid = element_blank()) 
+      
+      # Plot fitted vs residuals
+      plot.residuals.fitted.ij =  ggplot(model.ij, aes(x = .fitted, y = .resid)) +
+        geom_point(shape = 21, fill = "black", color = "gray", alpha = 0.5) +
+        geom_hline(yintercept = 0) +
+        labs(title='Residual vs. Fitted\nValues Plot', x='Fitted Values', y='Residuals') +
+        geom_smooth(method = "loess") +
+        theme(panel.background = element_rect(color = "black", fill = "white"), 
+              panel.grid = element_blank()) 
+      
+      # Plot the estimates
+      plot.estimates.ij = est.ij %>%
+        ggplot(aes(x = var, y = est, color = signif)) + 
+        geom_errorbar(aes(ymin = est.low, ymax = est.high),
+                      width = 0) + 
+        geom_point() +
+        labs(title= paste0(response.vec[i], " ~ ", 
+                           paste(model.list[[j]]$var, collapse = " + "), 
+                           "\nAIC = ", round(AIC(model.ij), digits = 2)), 
+             x='', y = paste0("Effect on ", response.vec[i])) +
+        scale_color_manual(values = c(`no` = "gray", `yes` = "black")) +
+        geom_hline(yintercept = 0, linetype = "dashed") +
+        theme(panel.background = element_rect(color = "black", fill = "white"), 
+              panel.grid = element_blank(), 
+              legend.position = "none") + 
+        coord_flip()
+      
+      # Plot for ij
+      plot.ij = plot_grid(plot.estimates.ij, (ggplot() + theme_void()), 
+                          plot.residuals.distr.ij, plot.residuals.fitted.ij, 
+                          nrow = 1, rel_widths = c(1, 0.1, 0.6, 0.6), align = "h")
+      
+      # Add to the list
+      eval(parse(text = paste0("plot.list.i$model", j, " <- plot.ij")))
+      
+    }
+    
+    # Make plot i
+    plot.i = plot_grid(plotlist = plot.list.i, ncol = 1, align = "h", scale = 0.9,
+                       labels = paste0("(", letters[c(1:length(names(plot.list.i)))], ")"))
+    
+    # File name of plot i
+    file.i = paste0(dir.in, "/", response.vec[i], ".jpg")
+    
+    # Create directory if needed
+    if(i == 1) create_dir_if_needed(file.i)
+    
+    # Save plot i
+    ggsave(file.i, plot.i, width = 24, height = 30, units = "cm", 
+           dpi = 600, bg = "white")
+    
+    # Add file to the output vector
+    out = c(out, file.i)
+  }
+  
+  return(out)
+  
+}
 
 
 
 
-## -- Exploratory plots ----
+
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# -- Exploratory plots -----
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 #' Function to plot changes in CWM and FD along time till equilibrium
 #' @param sim_equilibrium vector of the filenames of simulations saved as rds
@@ -792,6 +978,9 @@ plot_cwm_fd_overtime = function(sim_equilibrium, forest_list, pc1_per_species,
                                 file.in){
   # Create the directories of file.in if needed
   create_dir_if_needed(file.in)
+  
+  # Initialize a counter of successful simulations
+  k = 0
   
   # Loop on all simulations
   for(i in 1:length(sim_equilibrium)){
@@ -818,9 +1007,12 @@ plot_cwm_fd_overtime = function(sim_equilibrium, forest_list, pc1_per_species,
                sp.richness = length(unlist(strsplit(forest_list$combination[i], "\\."))))
       
       # Add to the final dataset
-      if(i == 1) data = data.i
+      if(k == 0) data = data.i
       else data = rbind(data, data.i)
-    }
+      
+      # The simulation was successful: increase the counter
+      k = k+1
+    } 
     
   }
   
