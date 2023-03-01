@@ -583,94 +583,90 @@ plot_resilience_vs_climate = function(data_models, file.in){
 
 
 
-#' Plot the effects of CWM and FD along climatic gradient
-#' @param data_models data with functional diversity, resilience metrics
-#' @param file.in name including path of the file to save
-plot_CMW_and_FD_effect_climate = function(data_models, file.in){
+#' Function to estimate of FD metrics on resilience
+#' @param data.list.in list of data_model df, where names are disturbances
+#' @param file.in Name of the file to save, inlcuding path
+plot_FD_effect_resilience_climate = function(data.list.in, file.in){
   
-  # Create directory if needed
+  # create output directory if it doesn't exist
   create_dir_if_needed(file.in)
   
-  # Format data
-  data.in = data_models %>%
-    filter(resistance > 0) %>%
-    mutate(CWM.scaled = scale(.$CWM), 
-           FD.scaled = scale(.$FD)) %>%
-    gather(key = "variable", value = "value",  
-           "resistance", "resilience", "recovery") %>%
-    filter(is.finite(value))
+  # Vector of response variables for which to run models
+  response.vec = c("resilience", "resistance", "recovery")
   
-  # Initialize output dataset
-  data.out = expand.grid(ID.climate = unique(data.in$ID.climate), 
-                         variable = unique(data.in$variable), 
-                         var.exp = c("CWM", "FD", "CWM:FD")) %>%
-    mutate(climate = paste0("climate_", ID.climate)) %>%
-    mutate(est = NA_real_, lwr = NA_real_, upr = NA_real_)
-  
-  # model to unscale CWM
-  mod.unscale.CWM = lm(CWM ~ CWM.scaled, data = subset(data.in, var = "resistance"))
-  mod.unscale.FD = lm(FD ~ FD.scaled, data = subset(data.in, var = "resistance"))
-  
-  
-  # Loop on all variables tested
-  for(i in 1:length(unique(data.in$variable))){
+  # Loop on all disturbances
+  for(i in 1:length(names(data.list.in))){
     
-    # Variable i
-    var.i = unique(data.in$variable)[i]
+    # Data to fit the models for disturbance i
+    data.i = cbind(data.list.in[[i]][, c("ID.climate", "pca1", response.vec)], 
+                   scale((data.list.in[[i]] %>% dplyr::select(R = nsp, FD, CWM)), 
+                         center = TRUE, scale = TRUE)) %>%
+      mutate(resilience = log(resilience), 
+             recovery = log(recovery))
     
-    # Loop on all climate tested
-    for(j in 1:length(unique(data.in$ID.climate))){
+    # Loop on all climates
+    for(k in 1:length(unique(data.i$ID.climate))){
       
-      # Make model for variable i and climate j
-      mod.ij = lm(log(value) ~ CWM.scaled*FD.scaled, 
-                  data = subset(data.in, variable == var.i & ID.climate == j))
+      # Data filtered for climate k only
+      data.ik = data.i %>%
+        filter(ID.climate == unique(data.i$ID.climate)[k])
       
-      # Store model output for each explanatory variable
-      for(k in 1:3){
+      # Loop on all response variables
+      for(j in 1:length(response.vec)){
         
-        # explanatory variable k
-        var.exp.k = c("CWM", "FD", "CWM:FD")[k]
+        # Fit model
+        eval(parse(text = paste0(
+          "model.ij = lm(", response.vec[j], " ~ R + FD + CWM, data = data.ik)"
+        )))
         
-        # ID of climate j, var i and var exp k in data.out
-        ID.ijk = which(data.out$ID.climate == j & 
-                         data.out$variable == var.i & 
-                         data.out$var.exp == var.exp.k)
+        # Output data set for model i j 
+        data.out.ijk = data.frame(
+          ID.climate = unique(data.ik$ID.climate),
+          pca1 = unique(data.ik$pca1),
+          disturbance = names(data.list.in)[i], 
+          var.resp = response.vec[j], 
+          var.exp = c("R", "FD", "CWM"), 
+          var.pos = c(1:3),
+          est = as.numeric(coef(model.ij)[-1]), 
+          est.low = as.numeric(confint(model.ij)[-1, 1]), 
+          est.high = as.numeric(confint(model.ij)[-1, 2])
+        )
         
-        # Fill data.out with model output
-        data.out$est[ID.ijk] = coef(summary(mod.ij))[(k+1), 1]
-        data.out$lwr[ID.ijk] = confint(mod.ij)[(k+1), 1]
-        data.out$upr[ID.ijk] = confint(mod.ij)[(k+1), 2]
+        # Add to the final output dataset
+        if(i == 1 & j == 1 & k == 1) data.out = data.out.ijk
+        else data.out = rbind(data.out, data.out.ijk)
       }
     }
   }
   
-  # Final plot
-  plot.out <- data.out %>%
-    mutate(signif = ifelse(lwr > 0 | upr < 0, "yes", "no")) %>%
-    left_join((data.in %>% dplyr::select(ID.climate, pca1) %>% distinct()), 
-              by = "ID.climate") %>%
-    ggplot(aes(x = pca1, y = est, color = signif, group = 1)) + 
-    geom_point() + 
-    geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0) + 
-    geom_hline(yintercept = 0, linetype = "dashed", color = "gray") + 
-    scale_color_manual(values = c(`no` = "gray", `yes` = "black")) + 
-    theme(panel.background = element_rect(fill = "white", color = "black"), 
-          panel.grid = element_blank(), 
-          legend.position = "none", 
-          strip.background = element_blank()) + 
-    xlab("PCA1 climate") + ylab("Effect") +
-    facet_grid(var.exp ~ variable, scales = "free")
   
-  # Save the plot
-  ggsave(file.in, plot.out, width = 12, height = 9, units = "cm", 
+  # Plot the estimates
+  plot.out = data.out %>%
+    mutate(significance = ifelse(est.low > 0 | est.high < 0, "yes", "no")) %>%
+    mutate(community = paste0(disturbance, "-disturbed")) %>%
+    ggplot(aes(x = pca1, y = est, color = significance, fill = community)) + 
+    geom_errorbar(aes(ymin = est.low, ymax = est.high), width = 0) + 
+    geom_point(shape = 21) +
+    xlab("Coordinate on the sgdd-wai PCA") + ylab("Effect of FD metric") +
+    scale_color_manual(values = c(`no` = "gray", `yes` = "black")) +
+    scale_fill_manual(values = c(`storm-disturbed` = "#2A9D8F", 
+                                 `fire-disturbed` = "#E76F51")) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_grid(var.exp ~ var.resp, scales = "free") +
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          strip.text = element_text(face = "bold"), 
+          legend.key = element_blank()) 
+  
+  # Save plot i
+  ggsave(file.in, plot.out, width = 16, height = 7, units = "cm", 
          dpi = 600, bg = "white")
   
-  # return the name of the file
+  # Return name of the file saved
   return(file.in)
   
 }
-
-
 
 #' Analyse the data with a structural equation model approach
 #' @param data_model formatted model output
@@ -831,138 +827,164 @@ plot_sem = function(data_model, FD_metric = "FD", file.in){
 
 
 
-#' Function to estimate and residuals of different models testing the effect 
-#' of FD on resilience metrics
-#' @param data_model Data formatted to fit models
-#' @param dir.in Directory where to save the different plots
-plot_estimate_and_resid = function(data_model, dir.in){
+#' Function to estimate of FD metrics on resilience
+#' @param data.list.in list of data_model df, where names are disturbances
+#' @param file.in Name of the file to save, inlcuding path
+plot_FD_effect_resilience = function(data.list.in, file.in){
   
-  # Pre-formatting
-  data.in = data_model %>%
-    mutate(monosp = ifelse(nsp == 1, 1, 0))
-  
-  # List of models
-  model.list = list(
-    model1 = list(var = c("FD", "CWM", "nsp")), 
-    model2 = list(var = c("FRic", "CWM", "nsp")), 
-    model3 = list(var = c("FDis", "CWM", "nsp")), 
-    model4 = list(var = c("FD", "CWM", "monosp")), 
-    model5 = list(var = c("FRic", "CWM", "monosp")), 
-    model6 = list(var = c("FDis", "CWM", "monosp"))
-  )
-  
-  # Initialize output (vector of files created)
-  out = c()
+  # create output directory if it doesn't exist
+  create_dir_if_needed(file.in)
   
   # Vector of response variables for which to run models
   response.vec = c("resilience", "resistance", "recovery")
   
-  # Loop on all possible variables
-  for(i in 1:length(response.vec)){
+  # Loop on all disturbances
+  for(i in 1:length(names(data.list.in))){
     
-    # Initialize plot list for response variable i
-    plot.list.i = list()
+    # Data to fit the models for disturbance i
+    data.i = cbind(data.list.in[[i]][, response.vec], 
+                   scale((data.list.in[[i]] %>% dplyr::select(R = nsp, FD, CWM)), 
+                         center = TRUE, scale = TRUE)) %>%
+      mutate(resilience = log(resilience), 
+             recovery = log(recovery))
     
-    # Loop on all models
-    for(j in 1:length(names(model.list))){
+    # Loop on all response variables
+    for(j in 1:length(response.vec)){
       
-      # Variables to scale
-      var.to.scale.j = model.list[[j]]$var[which(model.list[[j]]$var != "monosp")]
-      
-      # Scale data for models ij
-      data.ij = cbind(data.in[, response.vec], 
-                      scale(data.in[, var.to.scale.j]))
-      
-      # Add variables not to scale
-      if("monosp" %in% model.list[[j]]$var) data.ij$monosp = data.in$monosp 
-      
-      
-      # Write model 
+      # Fit model
       eval(parse(text = paste0(
-        "model.ij = lm(", response.vec[i], " ~ ", 
-        paste(model.list[[j]]$var, collapse = " + "), 
-        ", data = data.ij)"
+        "model.ij = lm(", response.vec[j], " ~ R + FD + CWM, data = data.i)"
       )))
       
-      # Extract estimates and confidence interval
-      est.ij = data.frame(var = rownames(confint(model.ij)), 
-                          est = coef(model.ij), 
-                          est.low = confint(model.ij)[, 1], 
-                          est.high = confint(model.ij)[, 2]) %>%
-        filter(var != "(Intercept)") %>%
-        mutate(signif = case_when(est.low > 0 ~ "yes", 
-                                  est.high < 0 ~ "yes", 
-                                  TRUE ~ "no"))
+      # Output data set for model i j 
+      data.out.ij = data.frame(
+        disturbance = names(data.list.in)[i], 
+        var.resp = response.vec[j], 
+        var.exp = c("R", "FD", "CWM"), 
+        var.pos = c(1:3),
+        est = as.numeric(coef(model.ij)[-1]), 
+        est.low = as.numeric(confint(model.ij)[-1, 1]), 
+        est.high = as.numeric(confint(model.ij)[-1, 2])
+      )
       
-      # Plot the histogram of residuals
-      plot.residuals.distr.ij = data.frame(residuals = model.ij$residuals) %>%
-        ggplot(aes(x = residuals)) + 
-        geom_histogram(color = "gray", fill = "black") +
-        labs(title='Residuals\ndistribution plot', x='Residuals', y='') +
-        theme(panel.background = element_rect(color = "black", fill = "white"), 
-              panel.grid = element_blank()) 
-      
-      # Plot fitted vs residuals
-      plot.residuals.fitted.ij =  ggplot(model.ij, aes(x = .fitted, y = .resid)) +
-        geom_point(shape = 21, fill = "black", color = "gray", alpha = 0.5) +
-        geom_hline(yintercept = 0) +
-        labs(title='Residual vs. Fitted\nValues Plot', x='Fitted Values', y='Residuals') +
-        geom_smooth(method = "loess") +
-        theme(panel.background = element_rect(color = "black", fill = "white"), 
-              panel.grid = element_blank()) 
-      
-      # Plot the estimates
-      plot.estimates.ij = est.ij %>%
-        ggplot(aes(x = var, y = est, color = signif)) + 
-        geom_errorbar(aes(ymin = est.low, ymax = est.high),
-                      width = 0) + 
-        geom_point() +
-        labs(title= paste0(response.vec[i], " ~ ", 
-                           paste(model.list[[j]]$var, collapse = " + "), 
-                           "\nAIC = ", round(AIC(model.ij), digits = 2)), 
-             x='', y = paste0("Effect on ", response.vec[i])) +
-        scale_color_manual(values = c(`no` = "gray", `yes` = "black")) +
-        geom_hline(yintercept = 0, linetype = "dashed") +
-        theme(panel.background = element_rect(color = "black", fill = "white"), 
-              panel.grid = element_blank(), 
-              legend.position = "none") + 
-        coord_flip()
-      
-      # Plot for ij
-      plot.ij = plot_grid(plot.estimates.ij, (ggplot() + theme_void()), 
-                          plot.residuals.distr.ij, plot.residuals.fitted.ij, 
-                          nrow = 1, rel_widths = c(1, 0.1, 0.6, 0.6), align = "h")
-      
-      # Add to the list
-      eval(parse(text = paste0("plot.list.i$model", j, " <- plot.ij")))
-      
+      # Add to the final output dataset
+      if(i == 1 & j == 1) data.out = data.out.ij
+      else data.out = rbind(data.out, data.out.ij)
     }
     
-    # Make plot i
-    plot.i = plot_grid(plotlist = plot.list.i, ncol = 1, align = "h", scale = 0.9,
-                       labels = paste0("(", letters[c(1:length(names(plot.list.i)))], ")"))
-    
-    # File name of plot i
-    file.i = paste0(dir.in, "/", response.vec[i], ".jpg")
-    
-    # Create directory if needed
-    if(i == 1) create_dir_if_needed(file.i)
-    
-    # Save plot i
-    ggsave(file.i, plot.i, width = 24, height = 30, units = "cm", 
-           dpi = 600, bg = "white")
-    
-    # Add file to the output vector
-    out = c(out, file.i)
   }
   
-  return(out)
+  
+  # Plot the estimates
+  plot.out = data.out %>%
+    mutate(significance = ifelse(est.low > 0 | est.high < 0, "yes", "no")) %>%
+    mutate(community = paste0(disturbance, "-disturbed")) %>%
+    ggplot(aes(x = var.exp, y = est, color = significance, fill = community)) + 
+    geom_errorbar(aes(ymin = est.low, ymax = est.high),
+                  width = 0) + 
+    geom_point(shape = 21) +
+    xlab("") + ylab("Effect on resilience metric") +
+    scale_color_manual(values = c(`no` = "gray", `yes` = "black")) +
+    scale_fill_manual(values = c(`storm-disturbed` = "#2A9D8F", 
+                                 `fire-disturbed` = "#E76F51")) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_grid(community ~ var.resp, scales = "free") +
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          strip.text.x = element_text(face = "bold"), 
+          strip.text.y = element_blank(), 
+          legend.key = element_blank()) + 
+    coord_flip()
+  
+  # Save plot i
+  ggsave(file.in, plot.out, width = 16, height = 7, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # Return name of the file saved
+  return(file.in)
   
 }
 
 
-
-
+#' Function to estimate of FD metrics on resilience
+#' @param data.list.in list of data_model df, where names are disturbances
+#' @param file.in Name of the file to save, inlcuding path
+plot_FD_and_climate_effect_resilience = function(data.list.in, file.in){
+  
+  # create output directory if it doesn't exist
+  create_dir_if_needed(file.in)
+  
+  # Vector of response variables for which to run models
+  response.vec = c("resilience", "resistance", "recovery")
+  
+  # Loop on all disturbances
+  for(i in 1:length(names(data.list.in))){
+    
+    # Data to fit the models for disturbance i
+    data.i = cbind(data.list.in[[i]][, response.vec], 
+                   scale((data.list.in[[i]] %>% 
+                            dplyr::select(R = nsp, FD, CWM, Clim = pca1)), 
+                         center = TRUE, scale = TRUE)) %>%
+      mutate(resilience = log(resilience), 
+             recovery = log(recovery))
+    
+    # Loop on all response variables
+    for(j in 1:length(response.vec)){
+      
+      # Fit model
+      eval(parse(text = paste0(
+        "model.ij = lm(", response.vec[j], " ~ R*Clim + FD*Clim + CWM*Clim, data = data.i)"
+      )))
+      
+      # Output data set for model i j 
+      data.out.ij = data.frame(
+        disturbance = names(data.list.in)[i], 
+        var.resp = response.vec[j], 
+        var.exp = names(coef(model.ij))[-1], 
+        est = as.numeric(coef(model.ij)[-1]), 
+        est.low = as.numeric(confint(model.ij)[-1, 1]), 
+        est.high = as.numeric(confint(model.ij)[-1, 2])
+      )
+      
+      # Add to the final output dataset
+      if(i == 1 & j == 1) data.out = data.out.ij
+      else data.out = rbind(data.out, data.out.ij)
+    }
+    
+  }
+  
+  
+  # Plot the estimates
+  plot.out = data.out %>%
+    mutate(significance = ifelse(est.low > 0 | est.high < 0, "yes", "no")) %>%
+    mutate(community = paste0(disturbance, "-disturbed")) %>%
+    ggplot(aes(x = var.exp, y = est, color = significance, fill = community)) + 
+    geom_errorbar(aes(ymin = est.low, ymax = est.high),
+                  width = 0) + 
+    geom_point(shape = 21) +
+    xlab("") + ylab("Effect on resilience metric") +
+    scale_color_manual(values = c(`no` = "gray", `yes` = "black")) +
+    scale_fill_manual(values = c(`storm-disturbed` = "#2A9D8F", 
+                                 `fire-disturbed` = "#E76F51")) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    facet_grid(community ~ var.resp, scales = "free") +
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          strip.text.x = element_text(face = "bold"), 
+          strip.text.y = element_blank(), 
+          legend.key = element_blank()) + 
+    coord_flip()
+  
+  # Save plot i
+  ggsave(file.in, plot.out, width = 16, height = 11, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # Return name of the file saved
+  return(file.in)
+  
+}
 
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

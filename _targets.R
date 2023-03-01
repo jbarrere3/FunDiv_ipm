@@ -288,33 +288,22 @@ list(
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
   
-  # Plot the effect of FD on resilience and residuals
-  tar_target(fig_FD_resilience_residuals_storm, plot_estimate_and_resid(
-    data_model_storm, "output/fig_analyses/FD_resilience/storm"), format = "file"),
-  tar_target(fig_FD_resilience_residuals_fire, plot_estimate_and_resid(
-    data_model_fire, "output/fig_analyses/FD_resilience/fire"), format = "file"),
-  # # Plot resilience vs FD anc CWM
-  # tar_target(fig_resilience_vs_cmw_and_fd_storm, plot_resilience_vs_CMW_and_FD(
-  #  data_model_storm, "output/fig_analyses/fig_resilience_vs_CMW_and_FD_storm.jpg"), 
-  #  format = "file"),
-  # tar_target(fig_resilience_vs_cmw_and_fd_storm_random, plot_resilience_vs_CMW_and_FD(
-  #   data_model_storm_random, "output/fig_analyses/fig_resilience_vs_CMW_and_FD_storm_random.jpg"), 
-  #   format = "file"),
-  # tar_target(fig_resilience_vs_cmw_and_fd_fire, plot_resilience_vs_CMW_and_FD(
-  #   data_model_fire, "output/fig_analyses/fig_resilience_vs_CMW_and_FD_fire.jpg"), 
-  #   format = "file"),
-  # 
-  # # Plot effect of FD and CWM on resilience along climatic gradient
-  # tar_target(fig_CMW_and_FD_effect_climate_storm, plot_CMW_and_FD_effect_climate(
-  #  data_model_storm, "output/fig_analyses/fig_CMW_and_FD_effect_climate_storm.jpg"), 
-  #  format = "file"),
-  # tar_target(fig_CMW_and_FD_effect_climate_storm_random, plot_CMW_and_FD_effect_climate(
-  #   data_model_storm_random, "output/fig_analyses/fig_CMW_and_FD_effect_climate_storm_random.jpg"), 
-  #   format = "file"),
-  # tar_target(fig_CMW_and_FD_effect_climate_fire, plot_CMW_and_FD_effect_climate(
-  #   data_model_fire, "output/fig_analyses/fig_CMW_and_FD_effect_climate_fire.jpg"), 
-  #   format = "file"),
-  # 
+  # Plot the effect of FD on resilience
+  tar_target(fig_FD_effect_resilience, plot_FD_effect_resilience(
+    list(storm = data_model_storm, fire = data_model_fire), 
+    "output/fig_analyses/fig_FD_effect_resilience.jpg"), format = "file"),
+  
+  # Plot the effect of FD and climate on resilience
+  tar_target(fig_FD_and_climate_effect_resilience, plot_FD_and_climate_effect_resilience(
+    list(storm = data_model_storm, fire = data_model_fire), 
+    "output/fig_analyses/fig_FD_and_climate_effect_resilience.jpg"), format = "file"),
+  
+  # Plot effect of FD and CWM on resilience along climatic gradient
+  tar_target(fig_FD_effect_resilience_climate, plot_FD_effect_resilience_climate(
+    list(storm = data_model_storm, fire = data_model_fire), 
+    "output/fig_analyses/fig_FD_effect_resilience_climate.jpg"), format = "file"),
+  
+  
   # # Plot resilience vs climate
   # tar_target(fig_resilience_vs_climate_storm, plot_resilience_vs_climate(
   #  data_model_storm, "output/fig_analyses/fig_resilience_vs_climate_storm.jpg"), 
@@ -328,11 +317,9 @@ list(
   # 
   # Make a network analysis with peacewise SEM
   tar_target(fig_sem_storm_FD, plot_sem(
-    data_model_storm, "FD", "output/fig_analyses/sem/storm_FD.jpg"), format = "file"), 
-  tar_target(fig_sem_storm_FDis, plot_sem(
-    data_model_storm, "FDis", "output/fig_analyses/sem/storm_FDis.jpg"), format = "file"), 
-  tar_target(fig_sem_storm_FRic, plot_sem(
-    data_model_storm, "FRic", "output/fig_analyses/sem/storm_FRic.jpg"), format = "file"), 
+    data_model_storm, "FD", "output/fig_analyses/sem_storm_FD.jpg"), format = "file"), 
+  tar_target(fig_sem_fire_FD, plot_sem(
+    data_model_fire, "FD", "output/fig_analyses/sem_fire_FD.jpg"), format = "file"), 
   
   
   
