@@ -412,7 +412,7 @@ make_simulations_disturbance = function(
   
   # Checked that the population reached equilibrium
   reached_equil = ifelse(
-    is.na(sum((tree_format(sim_equilibrium.in) %>%
+    is.na(sum((sim_equilibrium.in %>%
                  filter(var == "BAsp") %>%
                  filter(time == max(.$time) - 1))$value)), 
     FALSE, TRUE
@@ -432,8 +432,8 @@ make_simulations_disturbance = function(
       list.species[[i]] = readRDS(species.file.i)
       
       # Extract the equilibrium for species i
-      equil.i = tree_format(sim_equilibrium.in) %>%
-        filter(var == "m", equil, species == species.in[i]) %>% 
+      equil.i = sim_equilibrium.in %>%
+        filter(var == "n", equil, species == species.in[i]) %>% 
         pull(value)
       
       # Initiate the population at equilibrium
@@ -497,7 +497,7 @@ get_resilience_metrics <- function(sim_disturbance, disturbance.df,
     if(!is.na(sim.i[1, 1])){
       
       # Format the output
-      data.i <- tree_format(sim.i) %>%
+      data.i <- sim.i %>%
         filter(var == "BAsp") %>%
         filter(!equil) %>%
         group_by(time) %>%
@@ -578,7 +578,7 @@ get_FD_original <- function(forest_list, sim_disturbance, pc1_per_species){
     if(!is.na(sim.i[1, 1])){
       
       # Format the output
-      data.i <- tree_format(sim.i) %>%
+      data.i <- sim.i %>%
         filter(var == "BAsp") %>%
         filter(time == 1) %>%
         left_join(pc1_per_species, by = "species") %>%
@@ -615,7 +615,7 @@ get_FD_dimension <- function(forest_list, sim_disturbance, pc1_per_species){
     if(!is.na(sim.i[1, 1])){
       
       # Format the output
-      data.i <- tree_format(sim.i) %>%
+      data.i <- sim.i %>%
         mutate(ID.climate = forest_list$ID.climate[i], 
                ID.forest = forest_list$ID.forest[i], 
                ID.community = paste(ID.climate, ID.forest, sep = ".")) %>%
@@ -748,6 +748,10 @@ disturb_fun <- function(x, species, disturb = NULL, ...){
     stop(sprintf("The species %s miss this disturbance type (%s) parameters",
                  sp_name(species), disturb$type))
   }
+  # tmp fix
+  w <- which(size == 0)
+  size[w] <- rev(size[max(w +1)] - (diff(tail(size, 2)) * w))
+  
   logratio <- log(size / qmd)
   dbh.scaled = coef$dbh.intercept + size * coef$dbh.slope
   logratio.scaled = coef$logratio.intercept + logratio * coef$logratio.slope

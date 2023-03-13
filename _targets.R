@@ -83,7 +83,7 @@ list(
   tar_target(ID.climate_storm, c(1:10)),
   # -- list of climates
   tar_target(climate_list_storm, create_climate_list(length(ID.climate_storm), 
-                                                     quantile.range = c(0, 0.7))),
+                                                     quantile.range = c(0, 0.8))),
   # -- generate one climate object per iteration with branching
   tar_target(climate_storm, make_climate(
       FUNDIV_climate_species, quantiles.in = climate_list_storm[[ID.climate_storm]], 
@@ -186,7 +186,7 @@ list(
   tar_target(ID.climate_fire, c(1:10)),
   # -- list of climates
   tar_target(climate_list_fire, create_climate_list(length(ID.climate_fire), 
-                                                     quantile.range = c(0.5, 1))),
+                                                     quantile.range = c(0.8, 1))),
   # -- generate one climate object per iteration with branching
   tar_target(climate_fire, make_climate(
     FUNDIV_climate_species, quantiles.in = climate_list_fire[[ID.climate_fire]], 
@@ -262,21 +262,14 @@ list(
    "output/fig_informative/map_climates.jpg"), format = "file"), 
   
   # Proportion of species with sensitivity estimation per climate
-  tar_target(fig_prop.species_per_climate_storm, plot_prop.species_per_climate(
-    climate_list_storm, FUNDIV_climate_species, disturbance.in = "storm", 
-   exclude.in = c("Quercus_ilex"), "output/fig_informative/fig_prop_per_clim_storm.jpg"), 
+  tar_target(fig_prop.species_per_climate, plot_prop.species_per_climate(
+    FUNDIV_climate_species, "output/fig_informative/fig_prop_per_clim.jpg"), 
    format = "file"), 
-  tar_target(fig_prop.species_per_climate_fire, plot_prop.species_per_climate(
-   climate_list_fire, FUNDIV_climate_species, disturbance.in = "fire", 
-   exclude.in = c(), "output/fig_informative/fig_prop_per_clim_fire.jpg"), 
-   format = "file"),
+  
   
   # Co-variation between resilience metrics
   tar_target(fig_covariation_FD_storm, plot_covariation_FD(
     data_model_storm, "storm", "output/fig_informative/fig_covar_FD_storm.jpg"), 
-    format = "file"),
-  tar_target(fig_covariation_FD_fire, plot_covariation_FD(
-    data_model_fire, "fire", "output/fig_informative/fig_covar_FD_fire.jpg"), 
     format = "file"),
   
   
@@ -302,6 +295,11 @@ list(
   tar_target(fig_FD_effect_resilience_climate, plot_FD_effect_resilience_climate(
     list(storm = data_model_storm, fire = data_model_fire), 
     "output/fig_analyses/fig_FD_effect_resilience_climate.jpg"), format = "file"),
+  
+  # Plot predictions of resilience with FD metrics and climate
+  tar_target(fig_predictions, plot_predictions(
+    list(storm = data_model_storm, fire = data_model_fire), 
+    "output/fig_analyses/fig_predictions.jpg"), format = "file"),
   
   
   # # Plot resilience vs climate

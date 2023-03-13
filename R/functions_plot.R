@@ -80,74 +80,6 @@ plot_traits_pca <- function(traits, file.in){
 }
 
 
-#' Function to plot the sgdd wai pca and the climate defined
-#' @param FUNDIV_climate_species data with species presence and climate per FUNDIV plot
-#' @param climate.list list of climates to show in the pca
-#' @param file.in name of the fileto save, including path
-plot_pca_climate = function(FUNDIV_climate_species, climate.list, file.in){
-  
-  # Create directory if needed
-  create_dir_if_needed(file.in)
-  
-  # Remake pca to plot the arrows
-  pca = prcomp(FUNDIV_climate_species[, c("sgdd", "wai")], 
-               center = TRUE, scale = TRUE)
-  
-  # Extract results for individuals
-  data_pca_ind = data.frame(plotcode = FUNDIV_climate_species$plotcode) %>%
-    cbind(as.data.frame(get_pca_ind(pca)[[1]])) %>%
-    rename("pca1" = "Dim.1", "pca2" = "Dim.2") %>%
-    mutate(climate = "none")
-  
-  # Extract results for variables
-  data_var_pca = get_pca_var(pca)[[1]] %>%
-    as.data.frame() %>%
-    mutate(var = rownames(.)) %>%
-    rename("pca1" = "Dim.1", "pca2" = "Dim.2") %>%
-    mutate(pca1 = pca1*2, pca2 = pca2*2)
-  
-  # Loop on all climates to specify which plot is in which climate
-  for(i in 1:length(names(climate.list))){
-    
-    # Identify the range of pca1 associated with climate i
-    range.i = as.numeric(quantile(data_pca_ind$pca1, probs = climate.list[[i]]))
-    
-    # Modify data.in for plots that are in the range
-    data_pca_ind = data_pca_ind %>%
-      mutate(climate = ifelse(pca1 > range.i[1] & pca1 < range.i[2], 
-                              names(climate.list)[i], climate))
-  }
-  
-  
-  # Plot the pca
-  plot.out = data_pca_ind %>%
-    filter(climate != "none") %>%
-    mutate(climate = factor(climate, levels = names(climate.list))) %>%
-    ggplot(aes(x = pca1, y = pca2, color = climate)) + 
-    geom_point(alpha = 0.5) + 
-    geom_segment(aes(x = 0, y = 0, xend = pca1, yend = pca2), 
-                 data = data_var_pca, type = "closed", color = "black",
-                 arrow = arrow(length = unit(0.1, "cm"))) + 
-    geom_text(data = data_var_pca, aes(label = var), size = 5, color = "black", 
-              nudge_y = 0.1) +
-    scale_color_manual(values = colorRampPalette(c("blue", "red"))(length(names(climate.list)))) +
-    geom_hline(size = 0.2, yintercept = 0, color = "#6C757D", linetype = "dashed") + 
-    geom_vline(size = 0.2, xintercept = 0, color = "#6C757D", linetype = "dashed") + 
-    xlab(paste0("PCA1 (", round(summary(pca)$importance[2, 1]*100, digits = 2), "%)")) +
-    ylab(paste0("PCA2 (", round(summary(pca)$importance[2, 2]*100, digits = 2), "%)")) +
-    theme(panel.background = element_rect(color = "black", fill = "white"), 
-          panel.grid = element_blank(), 
-          axis.title = element_text(size = 15), 
-          legend.key = element_blank())
-  
-  # - Save the plot
-  ggsave(file.in, plot.out, width = 16, height = 13, 
-         units = "cm", dpi = 600, bg = "white")
-  
-  # return the name of all the plots made
-  return(file.in)
-}
-
 
 
 
@@ -987,6 +919,126 @@ plot_FD_and_climate_effect_resilience = function(data.list.in, file.in){
 }
 
 
+
+
+#' Function to estimate of FD metrics on resilience
+#' @param data.list.in list of data_model df, where names are disturbances
+#' @param file.in Name of the file to save, inlcuding path
+plot_predictions = function(data.list.in, file.in){
+  
+  # create output directory if it doesn't exist
+  create_dir_if_needed(file.in)
+  
+  # Vector of response variables for which to run models
+  response.vec = c("resilience", "resistance", "recovery")
+  
+  # Loop on all disturbances
+  for(i in 1:length(names(data.list.in))){
+    
+    # Data to fit the models for disturbance i
+    data.i = cbind(data.list.in[[i]][, response.vec], 
+                   scale((data.list.in[[i]] %>% 
+                            dplyr::select(R = nsp, FD, CWM, Clim = pca1)), 
+                         center = TRUE, scale = TRUE)) %>%
+      # Convert strictly positive variables to log scale
+      mutate(resilience = log(resilience), 
+             recovery = log(recovery))
+    
+    # Model to scale climate
+    scale.clim.i = lm(pca1 ~ Clim, 
+                      data = data.frame(pca1 = data.list.in[[i]]$pca1, 
+                                        Clim = data.i$Clim))
+    
+    # Loop on all response variables
+    for(j in 1:length(response.vec)){
+      
+      # Fit model
+      eval(parse(text = paste0(
+        "model.ij = lm(", response.vec[j], " ~ R*Clim + FD*Clim + CWM*Clim, data = data.i)"
+      )))
+      
+      # Output data set for model i j 
+      data0.ij = expand.grid(
+        community = paste0(names(data.list.in)[i], "-disturbed"),
+        Clim = seq(from = min(data.i$Clim), to = max(data.i$Clim), length.out = 100),
+        var.resp = response.vec[j], 
+        exp.quantile = c(0.2, 0.8))
+      
+      # Rescale climate
+      data0.ij$pca1 = predict(scale.clim.i, newdata = data0.ij)
+      
+      # Vector of explanatory variables that are not climate
+      vec.exp = c("R", "FD", "CWM")
+      
+      # Loop on the three explanatory variables
+      for(k in 1:length(vec.exp)){
+        
+        # Add name of the explanatory variable
+        data.ijk = data0.ij %>% mutate(var.exp = vec.exp[k])
+        
+        # Write variable k with different value depending on quantile
+        eval(parse(text = paste0(
+          "data.ijk = data.ijk %>% mutate(", vec.exp[k] ,"= quantile(data.i$", 
+          vec.exp[k], ", probs = exp.quantile, na.rm = TRUE))"
+        )))
+        
+        # Other variables have their mean value
+        eval(parse(text = paste0(
+          "data.ijk = data.ijk %>% mutate(", 
+          paste(paste0(vec.exp[-k], " = mean(data.i$", vec.exp[-k], ", na.rm = TRUE)"), 
+                collapse = ", "), ")"
+        )))
+        
+        # Predict resilience metric and confidence interval
+        data.ijk = cbind.data.frame(data.ijk, predict(
+          model.ij, newdata = data.ijk, type = "response", 
+          interval = "confidence", level = 0.95)) %>%
+          gather(key = "variable", value = "value", "fit", "lwr", "upr") %>%
+          mutate(value = ifelse(var.resp == "resistance", value, exp(value))) %>%
+          spread(key = "variable", value = "value")
+        
+        # Add to the final output dataset
+        if(i == 1 & j == 1 & k == 1) data.out = data.ijk
+        else data.out = rbind(data.out, data.ijk)
+        
+      }
+      
+    }
+    
+  }
+  
+  
+  # Plot the estimates
+  plot.out = data.out %>%
+    mutate(FD_metric = paste0(100*exp.quantile, "% quantile")) %>%
+    ggplot(aes(x = pca1, y = fit, color = community, fill = community, 
+               group = interaction(community, FD_metric), 
+               alpha = FD_metric, linetype = FD_metric)) + 
+    geom_line() + 
+    geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA) +
+    xlab("Coordinate on the sgdd-wai PCA") + ylab("Resilience metric") +
+    scale_alpha_manual(values = c(0.3, 0.6)) +
+    scale_linetype_manual(values = c("dashed", "solid")) +
+    scale_color_manual(values = c(`storm-disturbed` = "#001524", 
+                                  `fire-disturbed` = "#78290F")) +
+    scale_fill_manual(values = c(`storm-disturbed` = "#2A9D8F", 
+                                 `fire-disturbed` = "#E76F51")) +
+    facet_grid(var.resp ~ var.exp, scales = "free") +
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          strip.text = element_text(face = "bold"), 
+          legend.key = element_blank())
+  
+  # Save plot i
+  ggsave(file.in, plot.out, width = 18, height = 9 , units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # Return name of the file saved
+  return(file.in)
+  
+}
+
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # -- Exploratory plots -----
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1012,7 +1064,6 @@ plot_cwm_fd_overtime = function(sim_equilibrium, forest_list, pc1_per_species,
     
     # Extract the data for simulation i
     data.i = readRDS(sim_equilibrium[i]) %>%
-      tree_format() %>%
       filter(equil == FALSE, var == "BAsp") %>%
       left_join(pc1_per_species, by = "species")
     
@@ -1193,62 +1244,178 @@ plot_pca1_selection_vs_random = function(climate, pc1_per_species, file.in){
 
 #' Function to plot the proportion of species and of trees for which we have 
 #' disturbance data per climate.
-#' @param climate_list List containing quantiles for each climate
 #' @param FUNDIV_climate_species df containing species presence and climate per FUNDIV plot 
-#' @param disturbance.in disturbance to focus on ("storm", "biotic", "fire", or "snow")
-#' @param exclude.in vector of additional species to exclude 
 #' @param file.in Name of the file to save, including path
-plot_prop.species_per_climate = function(
-  climate_list, FUNDIV_climate_species, disturbance.in, exclude.in = c(), file.in){
+plot_prop.species_per_climate = function(FUNDIV_climate_species, file.in){
   
+  
+  # Create directory of file.in if it doesn't exist
+  create_dir_if_needed(file.in)
+  
+  # -- 
+  # Start by making the climate pca
+  # -- 
+  
+  # - Make PCA 
+  pca <- prcomp(FUNDIV_climate_species[, c("sgdd", "wai")], 
+                center = TRUE, scale = TRUE)
+  
+  # Number of categories for plotting
+  n.cat = 15
+  
+  
+  # - Extract the coordinates of the individuals on pca axis
+  res.ind <- data.frame(plot = FUNDIV_climate_species$plotcode, 
+                        pca1 = FUNDIV_climate_species$pca1)  %>%
+    mutate(pca1_cut = cut(pca1, breaks = seq(min(pca1), max(pca1), length.out = n.cat)), 
+           pca1_min = as.numeric(gsub("\\(", "", gsub("\\,.+", "", pca1_cut))), 
+           pca1_max = as.numeric(gsub(".+\\,", "", gsub("\\]", "", pca1_cut))), 
+           pca1_median = (pca1_min + pca1_max)/2) %>%
+    filter(!is.na(pca1_cut))
+  
+  # - Extract the coordinates of the variables on pca axis and classify by category
+  res.var <- data.frame(var = rownames(get_pca_var(pca)[[1]]), 
+                        # Negative because inverse of pca in original data
+                        pca1 = -get_pca_var(pca)[[1]][, 1]) %>%
+    mutate(var.pos = c(1:dim(.)[1]))
+  
+  # Plot the arrows of the first PCA axis
+  plot.var = res.var %>%
+    ggplot(aes(x = var.pos, xend = var.pos, y = 0, yend = pca1)) + 
+    geom_segment(arrow = arrow(length = unit(0.1, "cm"))) + 
+    scale_x_continuous(breaks = res.var$var.pos, 
+                       labels = res.var$var, 
+                       limits = c(0.5, 2.5)) + 
+    xlab("") + geom_hline(yintercept = 0, linetype = "dashed") +
+    ylab(paste0("PCA1 (", round(summary(pca)$importance[2, 1]*100, digits = 2), "%)")) + 
+    coord_flip() + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank()) 
+  
+  # Plot the distribution of plots along the pca axis
+  plot.ind = res.ind %>%
+    group_by(pca1_median) %>%
+    summarize(n = n()) %>%
+    ggplot(aes(x = pca1_median, y = n, fill = pca1_median)) +
+    geom_bar(color = "black", stat = "identity") +
+    scale_fill_gradientn(colors = colorRampPalette(c("blue", "orange"))(n.cat)) +
+    ylab("Number of\nNFI plots") + 
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          axis.text.x = element_blank(), 
+          axis.title.x = element_blank(), 
+          axis.ticks.x = element_blank(), 
+          legend.position = "none") 
+  
+  # Plot the pca climate
+  plot.pca = plot_grid(plot.ind, plot.var, ncol = 1, align = "v", 
+                       labels = c("(a)", ""), rel_heights = c(1, 0.5))
+  
+  
+  # Memorize the color vector 
+  color.data = res.ind %>%
+    dplyr::select(pca1_min, pca1_max, pca1_median) %>%
+    arrange(pca1_min) %>%
+    distinct() %>%
+    mutate(color = colorRampPalette(c("blue", "orange"))(dim(.)[1]))
   # Vector of all species
   species_vec = colnames(FUNDIV_climate_species)[grep("_", colnames(FUNDIV_climate_species))]
   
-  # Vector of all species for which we have disturbance parameters
-  data("disturb_coef")
-  species_vec_dist = (disturb_coef %>%
-                        filter(disturbance %in% disturbance.in))$species
-  species_vec_dist = species_vec_dist[!(species_vec_dist %in% exclude.in)]
   
-  # Loop on all climate
-  for(i in 1:length(names(climate_list))){
+  
+  
+  
+  
+  # -- 
+  # Plots of the proportion of trees per climate
+  # -- 
+  
+  
+  # Disturbances for which we do the analyses
+  disturbances.in = c("storm", "fire")
+  
+  # Load vector with disturbance parameters per species and disturbance
+  data("disturb_coef")
+  
+  # Create a climate list with 15 quantile
+  climate_list.in = create_climate_list(15, quantile.range = c(0, 1))
+  
+  # Threshold of tree percentage above which we exclude disturbance
+  tree.percent.max = 85
+  
+  # Initialize list of plots 
+  plotlist.out = list()
+  
+  # Loop on all disturbances
+  for(j in 1:length(disturbances.in)){
     
-    # Format data for climate i
-    data.i = FUNDIV_climate_species %>%
-      filter(pca1 > quantile(FUNDIV_climate_species$pca1, climate_list[[i]][1])) %>%
-      filter(pca1 < quantile(FUNDIV_climate_species$pca1, climate_list[[i]][2])) %>%
-      gather(key = "species", value = "present", species_vec) %>%
-      group_by(species) %>%
-      summarize(n = sum(present)) %>%
-      mutate(present.in.data = ifelse(n == 0, 0, 1),
-             present.in.dist = ifelse(species %in% species_vec_dist, 1, 0),
-             climate = names(climate_list)[i], 
-             pca1.mean = quantile(FUNDIV_climate_species$pca1, sum(climate_list[[i]])/2)) %>%
-      dplyr::select(climate, pca1.mean, species, present.in.data, present.in.dist, n)
+    # Vector of all species for which we have disturbance parameters
+    species_vec_dist_j = (disturb_coef %>%
+                            filter(disturbance == disturbances.in[j]))$species
     
-    # Add to the final dataset
-    if(i == 1) data = data.i
-    else data = rbind(data, data.i)
+    # Loop on all climate
+    for(i in 1:length(names(climate_list.in))){
+      
+      # Format data for climate i
+      data.ij = FUNDIV_climate_species %>%
+        filter(pca1 > quantile(FUNDIV_climate_species$pca1, climate_list.in[[i]][1])) %>%
+        filter(pca1 < quantile(FUNDIV_climate_species$pca1, climate_list.in[[i]][2])) %>%
+        gather(key = "species", value = "present", species_vec) %>%
+        group_by(species) %>%
+        summarize(n = sum(present)) %>%
+        mutate(present.in.data = ifelse(n == 0, 0, 1),
+               present.in.dist = ifelse(species %in% species_vec_dist_j, 1, 0),
+               n.present.in.data = present.in.data*n,
+               n.present.in.dist = n*present.in.dist,
+               pca1.mean = quantile(FUNDIV_climate_species$pca1, sum(climate_list.in[[i]])/2)) %>%
+        ungroup() %>% group_by(pca1.mean) %>%
+        summarise(percent.trees.present = sum(n.present.in.dist)/sum(n.present.in.data)*100) %>%
+        mutate(disturbance = disturbances.in[j])
+      
+      # Add color
+      data.ij = data.ij %>%
+        mutate(color = ifelse(percent.trees.present <= tree.percent.max, "gray", 
+                              (color.data %>% 
+                                 filter(pca1_min < data.ij$pca1.mean) %>%
+                                 filter(pca1_max > data.ij$pca1.mean))$color))
+      
+      # Add to the final dataset
+      if(i == 1) data.j = data.ij
+      else data.j = rbind(data.j, data.ij)
+    }
+    
+    # Make the plot for disturbance j
+    plot.j = data.j %>%
+      mutate(pca1.factor = as.character(pca1.mean)) %>% 
+      ggplot(aes(x = pca1.mean, y = percent.trees.present, fill = pca1.factor)) + 
+      geom_point(shape = 21, color = "black") + 
+      scale_fill_manual(values = setNames(data.j$color, as.character(data.j$pca1.mean))) + 
+      ylim(0, 100) + 
+      ylab(paste0("Percentage of trees with\nan estimation of ", 
+                  disturbances.in[j], " sensitivity")) + 
+      xlab(paste0("PCA1 (", round(summary(pca)$importance[2, 1]*100, digits = 2), "%)")) + 
+      geom_hline(yintercept = tree.percent.max, linetype = "dashed") + 
+      theme(panel.background = element_rect(fill = "white", color = "black"), 
+            panel.grid = element_blank(), 
+            legend.position = "none")
+    
+    # Add plot to the output list
+    eval(parse(text = paste0("plotlist.out$", disturbances.in[j], " = plot.j")))
+    
   }
   
+  # Plot with the proportion of trees per climate and disturbance type
+  plot.prop.trees = plot_grid(
+    plotlist = plotlist.out, nrow = 1, align = "h", scale = 0.9, 
+    labels = paste0("(", letters[2:(length(disturbances.in) + 1)], ")")
+  )
+  
   # Final plot 
-  plot.out = data %>%
-    ungroup() %>%
-    group_by(climate, pca1.mean) %>%
-    summarize(species.estimated = sum(present.in.data*present.in.dist)/sum(present.in.data), 
-              trees.estimated = sum(present.in.dist*n)/sum(n)) %>%
-    gather(key = "variable", value = "Proportion", "species.estimated", "trees.estimated") %>%
-    ggplot(aes(x = pca1.mean, y = Proportion, fill = variable)) + 
-    geom_point(shape = 21, color = "black") + 
-    xlab("Position in the PCA climate") + ylim(0, 1) +
-    ggtitle(disturbance.in) +
-    theme(panel.background = element_rect(fill = "white", color = "black"), 
-          panel.grid = element_blank(), 
-          legend.title = element_blank(), 
-          legend.key = element_blank())
+  plot.out = plot_grid(plot.pca, plot.prop.trees, nrow = 1, align = "h", 
+                       rel_widths = c(1, 2), scale = c(0.9, 1))
   
   # - Save the plot
-  ggsave(file.in, plot.out, width = 12, height = 8, units = "cm", dpi = 600, bg = "white")
+  ggsave(file.in, plot.out, width = 21, height = 7, units = "cm", dpi = 600, bg = "white")
   
   # return the name of all the plots made
   return(file.in)
