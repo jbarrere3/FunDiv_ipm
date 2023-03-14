@@ -176,61 +176,6 @@ list(
     climate_storm_random, resilience_storm_random, FD_storm_random)),
   
   
-  
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Make simulations with fire disturbances -----
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  
-  # Generate some climates
-  # -- iterations along all climates that will be created (one iteration per climate)
-  tar_target(ID.climate_fire, c(1:10)),
-  # -- list of climates
-  tar_target(climate_list_fire, create_climate_list(length(ID.climate_fire), 
-                                                     quantile.range = c(0.8, 1))),
-  # -- generate one climate object per iteration with branching
-  tar_target(climate_fire, make_climate(
-    FUNDIV_climate_species, quantiles.in = climate_list_fire[[ID.climate_fire]], 
-    "fire", 10, exclude.in = c("Carpinus_betulus"), 
-    method = "frequency"), pattern = map(ID.climate_fire), iteration = "list"), 
-  
-  # Make species objects
-  # -- First: list all species object to make
-  tar_target(species_list_fire, make_species_list(climate_fire, "fire")),
-  # -- Make a vector of ID for each species to make
-  tar_target(ID.species_fire, species_list_fire$ID.species), 
-  # -- Make the species via branching over ID.species
-  tar_target(species_fire, make_species_rds(
-    fit.list.allspecies, climate_fire, species_list_fire, 
-    ID.species.in = ID.species_fire), 
-    pattern = map(ID.species_fire), iteration = "vector", format = "file"),
-  
-  # Make simulations 
-  # -- Start with a list of forest to simulate
-  tar_target(forest_list_fire, make_forest_list(climate_fire, "fire")), 
-  # -- Make a vector of ID for each forest to simulate
-  tar_target(ID.forest_fire, forest_list_fire$ID.forest),
-  # -- Make simulations till equilibrium
-  tar_target(sim_equilibrium_fire, make_simulations_equilibrium(
-    climate_fire, harv_rules.ref, species_list_fire, forest_list_fire, species_fire, ID.forest_fire), 
-    pattern = map(ID.forest_fire), iteration = "vector", format = "file"),
-  # -- Make simulations with disturbance
-  tar_target(sim_disturbance_fire, make_simulations_disturbance(
-    climate_fire, harv_rules.ref, species_list_fire, forest_list_fire, 
-    species_fire, sim_equilibrium_fire, ID.forest.in = ID.forest_fire, disturbance.df_fire), 
-    pattern = map(ID.forest_fire), iteration = "vector", format = "file"),
-  
-  # Extract results
-  # -- Get functional diversity
-  tar_target(FD_fire, get_FD(forest_list_fire, sim_disturbance_fire, pc1_per_species)),
-  # -- Get resilience metrics
-  tar_target(resilience_fire, get_resilience_metrics(
-    sim_disturbance_fire, disturbance.df_fire, forest_list_fire)),
-  # -- Format data together
-  tar_target(data_model_fire, get_data_model(climate_fire, resilience_fire, FD_fire)),
-  
-  
-  
-  
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Traits -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -244,10 +189,6 @@ list(
   # Get coordinates in the first pca axis per species
   tar_target(pc1_per_species, get_pc1_per_species(traits)),
   
-  # Plot the pca with species traits
-  tar_target(fig_traits_pca, plot_traits_pca(
-    traits, "output/fig_informative/traits.jpg"), format = "file"),
- 
   
   
    
@@ -257,22 +198,12 @@ list(
    
   # Map of the different climates used for the analysis
   tar_target(fig_map_climates, map_climates(
-   FUNDIV_climate_species, list(storm = climate_list_storm, 
-                                fire = climate_list_fire), 
+   FUNDIV_climate_species, climate.in = climate_list_storm, 
    "output/fig_informative/map_climates.jpg"), format = "file"), 
   
-  # Proportion of species with sensitivity estimation per climate
-  tar_target(fig_prop.species_per_climate, plot_prop.species_per_climate(
-    FUNDIV_climate_species, "output/fig_informative/fig_prop_per_clim.jpg"), 
-   format = "file"), 
-  
-  
-  # Co-variation between resilience metrics
-  tar_target(fig_covariation_FD_storm, plot_covariation_FD(
-    data_model_storm, "storm", "output/fig_informative/fig_covar_FD_storm.jpg"), 
-    format = "file"),
-  
-  
+  # Plot the pca with species traits
+  tar_target(fig_traits_pca, plot_traits_pca(
+    traits, "output/fig_informative/traits.jpg"), format = "file"),
   
   
   
@@ -283,41 +214,22 @@ list(
   
   # Plot the effect of FD on resilience
   tar_target(fig_FD_effect_resilience, plot_FD_effect_resilience(
-    list(storm = data_model_storm, fire = data_model_fire), 
-    "output/fig_analyses/fig_FD_effect_resilience.jpg"), format = "file"),
+    data_model_storm, "output/fig_analyses/fig_FD_effect_resilience_storm.jpg"), 
+    format = "file"),
   
   # Plot the effect of FD and climate on resilience
   tar_target(fig_FD_and_climate_effect_resilience, plot_FD_and_climate_effect_resilience(
-    list(storm = data_model_storm, fire = data_model_fire), 
-    "output/fig_analyses/fig_FD_and_climate_effect_resilience.jpg"), format = "file"),
-  
-  # Plot effect of FD and CWM on resilience along climatic gradient
-  tar_target(fig_FD_effect_resilience_climate, plot_FD_effect_resilience_climate(
-    list(storm = data_model_storm, fire = data_model_fire), 
-    "output/fig_analyses/fig_FD_effect_resilience_climate.jpg"), format = "file"),
+    data_model_storm, "output/fig_analyses/fig_FD_and_climate_effect_resilience_storm.jpg"), 
+    format = "file"),
   
   # Plot predictions of resilience with FD metrics and climate
   tar_target(fig_predictions, plot_predictions(
-    list(storm = data_model_storm, fire = data_model_fire), 
-    "output/fig_analyses/fig_predictions.jpg"), format = "file"),
+    data_model_storm, "output/fig_analyses/fig_predictions_storm.jpg"), format = "file"),
   
   
-  # # Plot resilience vs climate
-  # tar_target(fig_resilience_vs_climate_storm, plot_resilience_vs_climate(
-  #  data_model_storm, "output/fig_analyses/fig_resilience_vs_climate_storm.jpg"), 
-  #  format = "file"), 
-  # tar_target(fig_resilience_vs_climate_storm_random, plot_resilience_vs_climate(
-  #   data_model_storm_random, "output/fig_analyses/fig_resilience_vs_climate_storm_random.jpg"), 
-  #   format = "file"), 
-  # tar_target(fig_resilience_vs_climate_fire, plot_resilience_vs_climate(
-  #   data_model_fire, "output/fig_analyses/fig_resilience_vs_climate_fire.jpg"), 
-  #   format = "file"), 
-  # 
   # Make a network analysis with peacewise SEM
   tar_target(fig_sem_storm_FD, plot_sem(
     data_model_storm, "FD", "output/fig_analyses/sem_storm_FD.jpg"), format = "file"), 
-  tar_target(fig_sem_fire_FD, plot_sem(
-    data_model_fire, "FD", "output/fig_analyses/sem_fire_FD.jpg"), format = "file"), 
   
   
   
@@ -329,17 +241,21 @@ list(
   tar_target(fig_cwm_and_fd_overtime_storm, plot_cwm_fd_overtime(
    sim_equilibrium_storm, forest_list_storm, pc1_per_species, 
    "output/fig_exploratory/cwm_and_fd_over_time_storm.jpg"), format = "file"), 
-  tar_target(fig_cwm_and_fd_overtime_fire, plot_cwm_fd_overtime(
-    sim_equilibrium_fire, forest_list_fire, pc1_per_species, 
-    "output/fig_exploratory/cwm_and_fd_over_time_fire.jpg"), format = "file"), 
+
+  # Proportion of species with sensitivity estimation per climate
+  tar_target(fig_prop.species_per_climate, plot_prop.species_per_climate(
+    FUNDIV_climate_species, "storm", "output/fig_exploratory/fig_prop_per_clim_storm.jpg"), 
+    format = "file"), 
   
+  # Co-variation between resilience metrics
+  tar_target(fig_covariation_FD_storm, plot_covariation_FD(
+    data_model_storm, "storm", "output/fig_exploratory/fig_covar_FD_storm.jpg"), 
+    format = "file"),
+
   # Functional density distribution of random vs selected communities
   tar_target(fig_pca1_selection_vs_random_storm, plot_pca1_selection_vs_random(
    climate_storm, pc1_per_species, 
-   "output/fig_exploratory/fig_pca1_selection_vs_random_storm.jpg"), format = "file"), 
-  tar_target(fig_pca1_selection_vs_random_fire, plot_pca1_selection_vs_random(
-    climate_fire, pc1_per_species, 
-    "output/fig_exploratory/fig_pca1_selection_vs_random_fire.jpg"), format = "file")
+   "output/fig_exploratory/fig_pca1_selection_vs_random_storm.jpg"), format = "file")
   
   
   
