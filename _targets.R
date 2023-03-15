@@ -67,10 +67,6 @@ list(
     type = rep("storm", 3), intensity = rep(0.5, 3), 
     IsSurv = rep(FALSE, 3), t = c(500:502))),
   
-  # Data.frame containing fire disturbance to apply
-  tar_target(disturbance.df_fire, data.frame(
-    type = rep("fire", 3), intensity = rep(0.5, 3), 
-    IsSurv = rep(FALSE, 3), t = c(500:502))),
   
   
   
