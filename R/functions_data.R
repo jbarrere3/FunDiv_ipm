@@ -274,7 +274,7 @@ make_species_rds = function(
     clim_lab = paste0("climate_", species_list$ID.climate[ID.species.in]),
     mesh = c(m = 700, L = 100, U = as.numeric(
       fit.list.allspecies[[species_list$species[ID.species.in]]]$info[["max_dbh"]]) * 1.1),
-    BA = 0:200, verbose = TRUE
+    BA = 0:200, verbose = TRUE, correction = "none"
   )
   
   # Create species object 
@@ -738,8 +738,9 @@ get_data_model = function(climate, resilience, FD){
 #' @author Maxime Jeaunatre
 #'
 disturb_fun <- function(x, species, disturb = NULL, ...){
+  
   dots <- list(...)
-  qmd <- dots$qmd
+  qmd <- dots$qmd 
   size <- species$IPM$mesh
   coef <- species$disturb_coef
   if(any(disturb$type %in% coef$disturbance)){
@@ -748,14 +749,15 @@ disturb_fun <- function(x, species, disturb = NULL, ...){
     stop(sprintf("The species %s miss this disturbance type (%s) parameters",
                  sp_name(species), disturb$type))
   }
-  # tmp fix
-  w <- which(size == 0)
-  size[w] <- rev(size[max(w +1)] - (diff(tail(size, 2)) * w))
   
-  logratio <- log(size / qmd)
+  # edits for delay
+  size[size == 0] <- min(size[size !=0])
+  
+  logratio <-  log(size / qmd)
   dbh.scaled = coef$dbh.intercept + size * coef$dbh.slope
   logratio.scaled = coef$logratio.intercept + logratio * coef$logratio.slope
-  Pkill <- plogis(coef$a0 + coef$a1 * logratio.scaled +
-                    coef$b * disturb$intensity^(coef$c * dbh.scaled))
+  Pkill <- plogis(coef$a0 + coef$a1 * logratio.scaled + 
+                    coef$b * disturb$intensity ^(coef$c * dbh.scaled))
+  
   return(x* Pkill) # always return the mortality distribution
 }

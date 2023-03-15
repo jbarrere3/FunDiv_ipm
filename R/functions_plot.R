@@ -343,19 +343,6 @@ plot_sem = function(data_model, FD_metric = "FD", file.in){
            xmax = center.x + box.width/2,
            center.y = 0.5*(ymin + ymax))
   
-  # -- Plot the boxes
-  plot.box = data.plot.box %>%
-    ggplot(aes(x = center.x, y = center.y))  + 
-    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
-              color = "black", fill = "#415A77")+ 
-    geom_text(aes(label = text), color = "white", size = 7) + 
-    theme(axis.title = element_blank(), 
-          axis.ticks = element_blank(), 
-          axis.text = element_blank(), 
-          panel.background = element_rect(fill = "white", color = "black"), 
-          panel.grid = element_blank(), 
-          legend.key = element_blank())
-  
   
   # Loop on all models to extract output
   for(i in 1:(length(names(mod_sem)) - 1)){
@@ -365,8 +352,13 @@ plot_sem = function(data_model, FD_metric = "FD", file.in){
       var.resp = as.character(summary(mod_sem[[i]])$terms[[2]]), 
       var.exp = as.character(rownames(summary(mod_sem[[i]])$coefficients)[-1]), 
       est = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 1]), 
-      p = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 4])
-    )
+      p = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 4]), 
+      class = ifelse("glm" %in% class(mod_sem[[i]]), "glm", "lm")
+    ) %>%
+      mutate(R2 = ifelse(
+        class == "glm", 
+        with(summary(mod_sem[[i]]), 1 - deviance/null.deviance), 
+        summary(mod_sem[[i]])$r.squared))
     # Add to final output
     if(i == 1) data.plot.arrow = data.plot.arrow.i
     else data.plot.arrow = rbind(data.plot.arrow, data.plot.arrow.i)
@@ -409,6 +401,55 @@ plot_sem = function(data_model, FD_metric = "FD", file.in){
              TRUE ~ "high"
            )) 
   
+  # Add stat to the plot box data
+  data.plot.box = data.plot.box %>%
+    left_join((data.plot.arrow %>% 
+                 dplyr::select(text = var.resp, class, R2) %>% 
+                 mutate(R2 = round(R2, digits = 3)) %>% 
+                 distinct() %>% 
+                 mutate(text_stat = paste0(text, "\n", "R2 = ", R2))), 
+              by = "text") %>%
+    mutate(text_stat = ifelse(is.na(text_stat), text, text_stat))
+  
+  # Add rectangles
+  data.box.cat = data.plot.box %>%
+    mutate(cat = case_when(
+      text == "climate" ~ "Climate", 
+      text %in% c("SR", "FD", "CWM") ~ "Species\ncomposition", 
+      text %in% c("resistance", "recovery", "resilience") ~ "Resilience"
+    )) %>%
+    group_by(cat) %>%
+    summarise(xmin = min(xmin) - 0.05*diff(range(data.plot.box$center.x)), 
+              xmax = max(xmax) + 0.05*diff(range(data.plot.box$center.x)), 
+              ymin = min(ymin) - 0.05*diff(range(data.plot.box$center.y)), 
+              ymax = max(ymax) + 0.05*diff(range(data.plot.box$center.y))) %>%
+    mutate(center.x = xmax + 0.02*diff(range(data.plot.box$center.y)), 
+           center.y = (ymin+ymax)/2)
+  
+  # -- Plot the boxes
+  plot.box = data.plot.box %>%
+    ggplot(aes(x = center.x, y = center.y))  + 
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = cat),
+              data = data.box.cat,  color = "black", inherit.aes = TRUE, 
+              show.legend = FALSE, alpha = 0.5)+ 
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
+              color = "black", fill = "#415A77", alpha = 0.7)+ 
+    geom_text(aes(label = text_stat), color = "white", size = 4) + 
+    geom_text(aes(label = cat), data = data.box.cat,
+              hjust = 0, size = 4, inherit.aes = TRUE) +
+    scale_fill_manual(values = c("#FF6F59", "#7678ED", "#43AA8B")) +
+    xlim(min(data.box.cat$xmin) - 0.05*diff(range(data.plot.box$center.x)), 
+         max(data.box.cat$center.x) + 0.3*diff(range(data.plot.box$center.x))) +
+    theme(axis.title = element_blank(), 
+          axis.ticks = element_blank(), 
+          axis.text = element_blank(), 
+          panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          legend.key = element_blank())
+  
+  
+  
+  
   # -- plot the box with arrows
   plot.out = plot.box + 
     # Vertical segment
@@ -431,7 +472,7 @@ plot_sem = function(data_model, FD_metric = "FD", file.in){
   
   
   # - Save the plot
-  ggsave(file.in, plot.out, width = 19, height = 12, units = "cm", dpi = 600, bg = "white")
+  ggsave(file.in, plot.out, width = 20, height = 12, units = "cm", dpi = 600, bg = "white")
   
   # return the name of all the plots made
   return(file.in)
@@ -699,6 +740,138 @@ plot_predictions = function(data_model, file.in){
   
   # Save plot i
   ggsave(file.in, plot.out, width = 18, height = 9 , units = "cm", 
+         dpi = 600, bg = "white")
+  
+  # Return name of the file saved
+  return(file.in)
+  
+}
+
+
+
+
+
+#' Function to estimate of FD metrics on resilience
+#' @param data_model df formatted to fit model
+#' @param file.in Name of the file to save, inlcuding path
+plot_FD_effect_vs_climate = function(data_model, file.in){
+  
+  # create output directory if it doesn't exist
+  create_dir_if_needed(file.in)
+  
+  # Vector of response variables for which to run models
+  response.vec = c("resilience", "resistance", "recovery")
+  
+  # Vector of explanatory variables that are not climate
+  vec.exp = c("R", "FD", "CWM")
+  
+  # Initialize data with the effect pvalue
+  data.text = expand.grid(var.resp = response.vec, 
+                          var.exp = vec.exp, 
+                          text = NA)
+  
+  # Data to fit the models for disturbance i
+  data.in = cbind(data_model[, response.vec], 
+                  scale((data_model %>% 
+                           dplyr::select(R = nsp, FD, CWM, Clim = pca1)), 
+                        center = TRUE, scale = TRUE)) %>%
+    # Convert strictly positive variables to log scale
+    mutate(resilience = log(resilience), 
+           recovery = log(recovery))
+  
+  # Model to scale climate
+  scale.clim = lm(pca1 ~ Clim, 
+                  data = data.frame(pca1 = data_model$pca1, 
+                                    Clim = data.in$Clim))
+  
+  # Initialize data with climatic gradient
+  data.clim = data.frame(
+    Clim = seq(from = min(data.in$Clim), to = max(data.in$Clim), length.out = 100)) %>%
+    mutate(pca1 = predict(scale.clim, newdata = .)) %>%
+    rename(pca1.scaled = Clim)
+  
+  
+  # Loop on all response variables
+  for(j in 1:length(response.vec)){
+    
+    # Fit model
+    eval(parse(text = paste0(
+      "model.j = lm(", response.vec[j], " ~ R*Clim + FD*Clim + CWM*Clim, data = data.in)"
+    )))
+    
+    # Initialize table with coefficients value
+    data.coef = as.data.frame(matrix(
+      NA, nrow = 10000, ncol = length(model.j$coefficients), dimnames = list(
+        c(), gsub("\\:", "\\.", names(model.j$coefficients)))))
+    
+    # Loop on all coefficients 
+    for(i in 2:dim(data.coef)[2]){
+      # Estimate
+      i.mean = summary(model.j)$coefficients[i, 1]
+      # Standard deviation
+      i.sd = summary(model.j)$coefficients[i, 2]
+      # Generate distribution of coefficient (normal distribution)
+      data.coef[, i] = rnorm(n = dim(data.coef)[1], mean = i.mean, sd = i.sd)
+    }
+    # Remove intercept column
+    data.coef = data.coef[, -1]
+    
+    # Merge with climate data
+    data.j = expand_grid(data.clim, data.coef) %>%
+      mutate(var.resp = response.vec[j]) %>%
+      mutate(R_effect = R + R.Clim*pca1.scaled, 
+             FD_effect = FD + Clim.FD*pca1.scaled, 
+             CWM_effect = CWM + Clim.CWM*pca1.scaled) %>%
+      dplyr::select(pca1, R_effect, FD_effect, CWM_effect) %>%
+      gather(key = "effect", value = "value", "R_effect", "FD_effect", "CWM_effect") %>%
+      group_by(pca1, effect) %>%
+      summarise(mean = mean(value, na.rm = TRUE), 
+                lwr = quantile(value, 0.025, na.rm = TRUE), 
+                upr = quantile(value, 0.975, na.rm = TRUE)) %>%
+      mutate(var.resp = response.vec[j])
+    
+    # Fill the text dataset
+    for(k in vec.exp){
+      id_text_jk = which(data.text$var.exp == k & data.text$var.resp == response.vec[j])
+      data.text[id_text_jk, "text"] = paste0(
+        k, ": ", pvalue(summary(model.j)$coefficients[k, 4], add_p = TRUE, accuracy = 0.01), 
+        "\n", k, "*Clim: ", pvalue(summary(model.j)$coefficients[
+          intersect(grep(k, names(model.j$coefficients)), 
+                    grep("Clim", names(model.j$coefficients))), 4], add_p = TRUE, accuracy = 0.01))
+    }
+    
+    # Add to the final output dataset
+    if(j == 1) data.out = data.j
+    else data.out = rbind(data.out, data.j)
+    
+  }
+  
+  # Add position on x and y axis for data.text
+  data.text = data.text %>%
+    mutate(pca1 = min(data.out$pca1) + 0.05*diff(range(data.out$pca1)), 
+           mean = max(data.out$mean) - 0.03*diff(range(data.out$mean))) %>%
+    mutate(effect = paste0(var.exp, " effect"))
+  
+  # Plot the estimates
+  plot.out = data.out %>%
+    mutate(effect = gsub("\\_", " ", effect)) %>%
+    ggplot(aes(x = pca1, y = mean, group = 1)) + 
+    geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, fill = "#2A9D8F", alpha = 0.5) +
+    geom_line(color = "#001524") + 
+    xlab("Coordinate on the sgdd-wai PCA") + ylab("Effect on resilience metric") +
+    facet_grid(effect ~ var.resp) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+    geom_text(aes(label = text), data = data.text, inherit.aes = TRUE, 
+              hjust = "inward", size = 2.5, alpha = 0.8) +
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          strip.text = element_text(face = "bold"), 
+          legend.key = element_blank(), 
+          legend.title = element_blank())
+  
+  # Save plot i
+  ggsave(file.in, plot.out, width = 13, height = 12 , units = "cm", 
          dpi = 600, bg = "white")
   
   # Return name of the file saved

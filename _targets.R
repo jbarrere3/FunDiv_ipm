@@ -231,7 +231,9 @@ list(
   tar_target(fig_sem_storm_FD, plot_sem(
     data_model_storm, "FD", "output/fig_analyses/sem_storm_FD.jpg"), format = "file"), 
   
-  
+  # Plot how the FD effect changes with climate
+  tar_target(fig_FD_effect_vs_climate, plot_FD_effect_vs_climate(
+    data_model_storm, "output/fig_analyses/fig_fd_effect_vs_climate.jpg"), format = "file"),
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Exploratory plots -----
