@@ -553,60 +553,29 @@ get_resilience_metrics <- function(sim_disturbance, disturbance.df,
 }
 
 
-#' Get functional diversity from simulations
-#' @param forest_list df containing info on each forest simulated
-#' @param sim_disturbance vector containing the file names of sim with disturbance
-#' @param pc1_per_species Position of each species along the growth-mortality trade-off
-get_FD_original <- function(forest_list, sim_disturbance, pc1_per_species){
-  
-  # Initialize the output
-  out <- forest_list %>%
-    dplyr::select(ID.forest, ID.climate, combination) %>%
-    mutate(nsp = NA_real_, FD = NA_real_)
-  
-  
-  # Loop on all species combination
-  for(i in 1:length(sim_disturbance)){
-    
-    # Fill the number of species
-    out$nsp[i] = length(unlist(strsplit(out$combination[i], "\\.")))
-    
-    # Read simulation i
-    sim.i = readRDS(sim_disturbance[i])
-    
-    # First, verify that equilibrium was reached
-    if(!is.na(sim.i[1, 1])){
-      
-      # Format the output
-      data.i <- sim.i %>%
-        filter(var == "BAsp") %>%
-        filter(time == 1) %>%
-        left_join(pc1_per_species, by = "species") %>%
-        summarise(FD = weighted.var(pca1, w = value))
-      # Add to the final dataframe
-      out$FD[i] <- data.i$FD
-    }
-    
-  }
-  
-  # Replace NA by 0
-  out <- out %>% mutate(FD = ifelse(is.na(FD), 0, FD))
-  
-  # Return output
-  return(out)
-}
 
 #' Get functional diversity from simulations with FD package
 #' @param forest_list df containing info on each forest simulated
 #' @param sim_disturbance vector containing the file names of sim with disturbance
 #' @param pc1_per_species Position of each species along the growth-mortality trade-off
-get_FD_dimension <- function(forest_list, sim_disturbance, pc1_per_species){
+get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
   
   # Initialize vector of all successful simulations
   vec.sim = c()
   
+  # Initialize the original fd data
+  data.fd.original <- forest_list %>%
+    dplyr::select(ID.forest, ID.climate, combination) %>%
+    mutate(nsp = NA_real_, FD = NA_real_, H = NA_real_, D = NA_real_)
+  
   # Loop on all species combination
   for(i in 1:length(sim_disturbance)){
+    
+    # Printer
+    print(paste0(i, "/", length(sim_disturbance)))
+    
+    # Fill the number of species
+    data.fd.original$nsp[i] = length(unlist(strsplit(data.fd.original$combination[i], "\\.")))
     
     # Read simulation i
     sim.i = readRDS(sim_disturbance[i])
@@ -614,8 +583,23 @@ get_FD_dimension <- function(forest_list, sim_disturbance, pc1_per_species){
     # First, verify that equilibrium was reached
     if(!is.na(sim.i[1, 1])){
       
-      # Format the output
-      data.i <- sim.i %>%
+      ## - FD with the original approach
+      data.fd.original.i <- sim.i %>%
+        filter(var == "BAsp") %>%
+        filter(time == 1) %>%
+        left_join(pc1_per_species, by = "species") %>%
+        mutate(p = value/sum(.$value), 
+               plnp = p*log(p), 
+               p2 = p^2) %>%
+        summarise(FD = weighted.var(pca1, w = value), 
+                  H = -sum(plnp), 
+                  D = 1/sum(p2)) 
+      data.fd.original$FD[i] <- data.fd.original.i$FD
+      data.fd.original$H[i] <- data.fd.original.i$H
+      data.fd.original$D[i] <- data.fd.original.i$D
+      
+      ## - FD with the FD package (dimension approach)
+      data.fd.dimension.i <- sim.i %>%
         mutate(ID.climate = forest_list$ID.climate[i], 
                ID.forest = forest_list$ID.forest[i], 
                ID.community = paste(ID.climate, ID.forest, sep = ".")) %>%
@@ -624,10 +608,10 @@ get_FD_dimension <- function(forest_list, sim_disturbance, pc1_per_species){
         dplyr::select(ID.climate, ID.forest, ID.community, species, value)
       
       # Also check we have trait value for all species in the community
-      if(all(data.i$species %in% pc1_per_species$species)){
+      if(all(data.fd.dimension.i$species %in% pc1_per_species$species)){
         # Add to the final dataframe
-        if(length(vec.sim) == 0) data = data.i
-        else data = rbind(data, data.i)
+        if(length(vec.sim) == 0) data.fd.dimension = data.fd.dimension.i
+        else data.fd.dimension = rbind(data.fd.dimension, data.fd.dimension.i)
         
         # Increment the counter
         vec.sim = c(vec.sim, i)
@@ -636,8 +620,11 @@ get_FD_dimension <- function(forest_list, sim_disturbance, pc1_per_species){
     
   }
   
+  # Replace NA by 0 in original approach
+  data.fd.original <- data.fd.original %>% mutate(FD = ifelse(is.na(FD), 0, FD))
+  
   # Abundance dataframe
-  abun.df = data %>%
+  abun.df = data.fd.dimension %>%
     spread(key = "species", value = "value") %>% 
     replace(is.na(.), 0)
   
@@ -656,7 +643,7 @@ get_FD_dimension <- function(forest_list, sim_disturbance, pc1_per_species){
   fd.raw <- dbFD(trait.df, abun.matrix, w.abun = TRUE)
   
   # Final dataframe
-  out <- data.frame(
+  data.fd.dimension.final <- data.frame(
     ID.forest = forest_list$ID.forest[vec.sim], 
     ID.climate = forest_list$ID.climate[vec.sim], 
     combination = forest_list$combination[vec.sim], 
@@ -665,31 +652,14 @@ get_FD_dimension <- function(forest_list, sim_disturbance, pc1_per_species){
     CWM = fd.raw$CWM$pca1
   )
   
-  # Return output
-  return(out)
-}
-
-#' Get functional diversity from simulations 
-#' @param forest_list df containing info on each forest simulated
-#' @param sim_disturbance vector containing the file names of sim with disturbance
-#' @param pc1_per_species Position of each species along the growth-mortality trade-off
-get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
-  
-  # Get the original FD index
-  FD_original = get_FD_original(forest_list, sim_disturbance, pc1_per_species)
-  
-  # Get the original FD index
-  FD_dimension = get_FD_dimension(forest_list, sim_disturbance, pc1_per_species)
-  
   # Join the two datasets
-  out = left_join(FD_original, FD_dimension, 
+  out = left_join(data.fd.original, data.fd.dimension.final, 
                   by = c("ID.forest", "ID.climate", "combination")) %>%
     filter(!is.na(FRic))
   
   # Return output
   return(out)
 }
-
 
 
 #' Format data for the models

@@ -284,25 +284,30 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
 #' Analyse the data with a structural equation model approach
 #' @param data_model formatted model output
 #' @param FD_metric Functional diversity metric to choose ("FDis", "FRic or "FD")
+#' @param recovery_metric Recovery metric to choose ("recovery", "thalf)
+#' @param R_metric Richness metric to choose ("nsp", "H" or "D")
 #' @param file.in name of the file to save, including path
-plot_sem = function(data_model, FD_metric = "FD", file.in){
+plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp", 
+                    recovery_metric = "recovery", file.in){
   
   # Create directory if needed
   create_dir_if_needed(file.in)
   
   # -- Start by formatting data before fitting the model
   data.in = data_model %>%
+    # Choose the right recovery metric
+    rename("recov" = recovery_metric) %>%
     # Log transform resilience metrics to fit normality assumption
     mutate(resistance.log = resistance, 
-           recovery.log = log(recovery), 
+           recovery.log = log(recov), 
            resilience.log = log(resilience)) %>%
     # Select the right FD metric
-    rename("FD_chosen" = FD_metric) %>%
+    rename("FD_chosen" = FD_metric, "R_chosen" = R_metric) %>%
     # scale all variables used in models
     mutate(climate_scaled = as.numeric(scale(pca1, center = TRUE, scale = TRUE)), 
            FD_scaled = as.numeric(scale(FD_chosen, center = FALSE, scale = TRUE)), 
            CWM_scaled = as.numeric(scale(CWM, center = TRUE, scale = TRUE)), 
-           SR_scaled = as.numeric(scale(nsp, center = TRUE, scale = TRUE)),
+           SR_scaled = as.numeric(scale(R_chosen, center = TRUE, scale = TRUE)),
            resistance.log_scaled = as.numeric(scale(resistance.log, center = TRUE, scale = TRUE)), 
            recovery.log_scaled = as.numeric(scale(recovery.log, center = TRUE, scale = TRUE)), 
            resilience.log_scaled = as.numeric(scale(resilience.log, center = TRUE, scale = TRUE)))
@@ -483,8 +488,9 @@ plot_sem = function(data_model, FD_metric = "FD", file.in){
 
 #' Function to estimate of FD metrics on resilience
 #' @param data_model df formatted to fit model
+#' @param R_metric Richness metric to choose ("nsp", "H" or "D")
 #' @param file.in Name of the file to save, inlcuding path
-plot_FD_effect_resilience = function(data_model, file.in){
+plot_FD_effect_resilience = function(data_model, R_metric = "nsp", file.in){
   
   # create output directory if it doesn't exist
   create_dir_if_needed(file.in)
@@ -496,7 +502,7 @@ plot_FD_effect_resilience = function(data_model, file.in){
   
   # Data to fit the models
   data.in = cbind(data_model[, response.vec], 
-                  scale((data_model %>% dplyr::select(R = nsp, FD, CWM)), 
+                  scale((data_model %>% dplyr::select("R" = R_metric, "FD", "CWM")), 
                         center = TRUE, scale = TRUE)) %>%
     mutate(resilience = log(resilience), 
            recovery = log(recovery))
@@ -528,6 +534,7 @@ plot_FD_effect_resilience = function(data_model, file.in){
   # Plot the estimates
   plot.out = data.out %>%
     mutate(significance = ifelse(est.low > 0 | est.high < 0, "yes", "no")) %>%
+    mutate(var.resp = factor(var.resp, levels = c("resistance", "recovery", "resilience"))) %>%
     ggplot(aes(x = var.exp, y = est, color = significance)) + 
     geom_errorbar(aes(ymin = est.low, ymax = est.high),
                   width = 0) + 
@@ -555,8 +562,9 @@ plot_FD_effect_resilience = function(data_model, file.in){
 
 #' Function to estimate of FD metrics on resilience
 #' @param data_model df formatted to fit model
+#' @param R_metric Richness metric to choose ("nsp", "H" or "D")
 #' @param file.in Name of the file to save, inlcuding path
-plot_FD_and_climate_effect_resilience = function(data_model, file.in){
+plot_FD_and_climate_effect_resilience = function(data_model, R_metric = "nsp", file.in){
   
   # create output directory if it doesn't exist
   create_dir_if_needed(file.in)
@@ -569,7 +577,7 @@ plot_FD_and_climate_effect_resilience = function(data_model, file.in){
   # Data to fit the models for disturbance i
   data.in = cbind(data_model[, response.vec], 
                   scale((data_model %>% 
-                           dplyr::select(R = nsp, FD, CWM, Clim = pca1)), 
+                           dplyr::select("R" = R_metric, "FD", "CWM", "Clim" = "pca1")), 
                         center = TRUE, scale = TRUE)) %>%
     mutate(resilience = log(resilience), 
            recovery = log(recovery))
@@ -611,6 +619,7 @@ plot_FD_and_climate_effect_resilience = function(data_model, file.in){
   # Plot the estimates
   plot.out = data.out %>%
     mutate(significance = ifelse(est.low > 0 | est.high < 0, "yes", "no")) %>%
+    mutate(var.resp = factor(var.resp, levels = c("resistance", "recovery", "resilience"))) %>%
     ggplot(aes(x = var.exp, y = est, color = significance)) + 
     geom_errorbar(aes(ymin = est.low, ymax = est.high),
                   width = 0) + 
@@ -640,8 +649,9 @@ plot_FD_and_climate_effect_resilience = function(data_model, file.in){
 
 #' Function to estimate of FD metrics on resilience
 #' @param data_model df formatted to fit model
+#' @param R_metric Richness metric to choose ("nsp", "H" or "D")
 #' @param file.in Name of the file to save, inlcuding path
-plot_predictions = function(data_model, file.in){
+plot_predictions = function(data_model, R_metric = "nsp", file.in){
   
   # create output directory if it doesn't exist
   create_dir_if_needed(file.in)
@@ -654,7 +664,7 @@ plot_predictions = function(data_model, file.in){
   # Data to fit the models for disturbance i
   data.in = cbind(data_model[, response.vec], 
                   scale((data_model %>% 
-                           dplyr::select(R = nsp, FD, CWM, Clim = pca1)), 
+                           dplyr::select("R" = R_metric, "FD", "CWM", "Clim" = "pca1")), 
                         center = TRUE, scale = TRUE)) %>%
     # Convert strictly positive variables to log scale
     mutate(resilience = log(resilience), 
@@ -724,6 +734,7 @@ plot_predictions = function(data_model, file.in){
   # Plot the estimates
   plot.out = data.out %>%
     mutate(FD_metric = paste0(100*exp.quantile, "% quantile")) %>%
+    mutate(var.resp = factor(var.resp, levels = c("resistance", "recovery", "resilience"))) %>%
     ggplot(aes(x = pca1, y = fit, group = FD_metric, 
                alpha = FD_metric, linetype = FD_metric)) + 
     geom_line(color = "#001524") + 
@@ -753,8 +764,9 @@ plot_predictions = function(data_model, file.in){
 
 #' Function to estimate of FD metrics on resilience
 #' @param data_model df formatted to fit model
+#' @param R_metric Richness metric to choose ("nsp", "H" or "D")
 #' @param file.in Name of the file to save, inlcuding path
-plot_FD_effect_vs_climate = function(data_model, file.in){
+plot_FD_effect_vs_climate = function(data_model, R_metric = "nsp", file.in){
   
   # create output directory if it doesn't exist
   create_dir_if_needed(file.in)
@@ -773,7 +785,7 @@ plot_FD_effect_vs_climate = function(data_model, file.in){
   # Data to fit the models for disturbance i
   data.in = cbind(data_model[, response.vec], 
                   scale((data_model %>% 
-                           dplyr::select(R = nsp, FD, CWM, Clim = pca1)), 
+                           dplyr::select("R" = R_metric, "FD", "CWM", "Clim" = "pca1")), 
                         center = TRUE, scale = TRUE)) %>%
     # Convert strictly positive variables to log scale
     mutate(resilience = log(resilience), 
@@ -855,6 +867,7 @@ plot_FD_effect_vs_climate = function(data_model, file.in){
   # Plot the estimates
   plot.out = data.out %>%
     mutate(effect = gsub("\\_", " ", effect)) %>%
+    mutate(var.resp = factor(var.resp, levels = c("resistance", "recovery", "resilience"))) %>%
     ggplot(aes(x = pca1, y = mean, group = 1)) + 
     geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, fill = "#2A9D8F", alpha = 0.5) +
     geom_line(color = "#001524") + 
@@ -1251,27 +1264,23 @@ plot_prop.species_per_climate = function(
 
 #' Function to show co-variations between resilience metrics
 #' @param data_model Data from simulations formatted
-#' @param disturbance.in "storm" or "fire" (just for title and color)
+#' @param var.in vector of variables to include in the pairwise analysis
 #' @param file.in Name of the file to save, including path
-plot_covariation_FD = function(data_model, disturbance.in, file.in){
+plot_covariation_FD = function(
+  data_model, var.in = c("FD", "FRic", "FDis", "CWM", "nsp", "H", "D"), file.in){
   
   # Create directory if needed
   create_dir_if_needed(file.in)
   
   # Make the plot
   plot.out =  data_model %>%
-    dplyr::select(FD, FRic, FDis, CWM, nsp) %>%
+    dplyr::select(var.in) %>%
     ggpairs(aes(alpha = 0.4)) + 
-    ggtitle(paste0("Covariations between FD metrics for ", 
-                   disturbance.in, "-disturbed communities")) +
     theme(panel.background = element_rect(color = "black", fill = "white"), 
           panel.grid = element_blank(), 
           legend.key = element_blank(), 
           strip.background = element_blank(), 
-          strip.text = element_text(face = "bold"), 
-          legend.title = element_blank(), 
-          legend.position = "top", 
-          plot.title = element_text(hjust = 0.5))
+          strip.text = element_text(face = "bold"))
   
   # Save the plot
   ggsave(file.in, plot.out, width = 20, height = 18, 

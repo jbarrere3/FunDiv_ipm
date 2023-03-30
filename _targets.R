@@ -210,26 +210,33 @@ list(
   
   # Plot the effect of FD on resilience
   tar_target(fig_FD_effect_resilience, plot_FD_effect_resilience(
-    data_model_storm, "output/fig_analyses/fig_FD_effect_resilience_storm.jpg"), 
+    data_model_storm, "H", "output/fig_analyses/fig_FD_effect_resilience_storm.jpg"), 
     format = "file"),
   
   # Plot the effect of FD and climate on resilience
   tar_target(fig_FD_and_climate_effect_resilience, plot_FD_and_climate_effect_resilience(
-    data_model_storm, "output/fig_analyses/fig_FD_and_climate_effect_resilience_storm.jpg"), 
+    data_model_storm, "H", "output/fig_analyses/fig_FD_and_climate_effect_resilience_storm.jpg"), 
     format = "file"),
   
   # Plot predictions of resilience with FD metrics and climate
   tar_target(fig_predictions, plot_predictions(
-    data_model_storm, "output/fig_analyses/fig_predictions_storm.jpg"), format = "file"),
+    data_model_storm, "H", "output/fig_analyses/fig_predictions_storm.jpg"), format = "file"),
   
   
   # Make a network analysis with peacewise SEM
-  tar_target(fig_sem_storm_FD, plot_sem(
-    data_model_storm, "FD", "output/fig_analyses/sem_storm_FD.jpg"), format = "file"), 
+  tar_target(fig_sem_storm, plot_sem(
+    data_model_storm, "FD", "H", "recovery", "output/fig_analyses/sem_storm.jpg"), 
+    format = "file"), 
+  tar_target(fig_sem_storm_thalf, plot_sem(
+    data_model_storm, "FD", "H", "thalf", "output/fig_analyses/sem_storm_thalf.jpg"), 
+    format = "file"), 
+  tar_target(fig_sem_storm_nsp, plot_sem(
+    data_model_storm, "FD", "nsp", "recovery", "output/fig_analyses/sem_storm_nsp.jpg"), 
+    format = "file"), 
   
   # Plot how the FD effect changes with climate
   tar_target(fig_FD_effect_vs_climate, plot_FD_effect_vs_climate(
-    data_model_storm, "output/fig_analyses/fig_fd_effect_vs_climate.jpg"), format = "file"),
+    data_model_storm, "H", "output/fig_analyses/fig_fd_effect_vs_climate.jpg"), format = "file"),
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Exploratory plots -----
@@ -247,9 +254,12 @@ list(
   
   # Co-variation between resilience metrics
   tar_target(fig_covariation_FD_storm, plot_covariation_FD(
-    data_model_storm, "storm", "output/fig_exploratory/fig_covar_FD_storm.jpg"), 
-    format = "file"),
-
+    data_model_storm, c("FD", "FRic", "FDis", "CWM", "nsp", "H", "D"), 
+    "output/fig_exploratory/fig_covar_FD_storm.jpg"), format = "file"),
+  tar_target(fig_covariation_res_storm, plot_covariation_FD(
+    data_model_storm, c("t0", "thalf", "resistance", "recovery", "resilience"), 
+    "output/fig_exploratory/fig_covar_res_storm.jpg"), format = "file"),
+  
   # Functional density distribution of random vs selected communities
   tar_target(fig_pca1_selection_vs_random_storm, plot_pca1_selection_vs_random(
    climate_storm, pc1_per_species, 
