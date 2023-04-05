@@ -307,7 +307,7 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
     mutate(climate_scaled = as.numeric(scale(pca1, center = TRUE, scale = TRUE)), 
            FD_scaled = as.numeric(scale(FD_chosen, center = FALSE, scale = TRUE)), 
            CWM_scaled = as.numeric(scale(CWM, center = TRUE, scale = TRUE)), 
-           SR_scaled = as.numeric(scale(R_chosen, center = TRUE, scale = TRUE)),
+           SR_scaled = as.numeric(scale(R_chosen, center = FALSE, scale = TRUE)),
            resistance.log_scaled = as.numeric(scale(resistance.log, center = TRUE, scale = TRUE)), 
            recovery.log_scaled = as.numeric(scale(recovery.log, center = TRUE, scale = TRUE)), 
            resilience.log_scaled = as.numeric(scale(resilience.log, center = TRUE, scale = TRUE)))
@@ -316,6 +316,8 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
   # -- Make model
   mod_sem = psem(
     glm(FD_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
+        data = data.in), 
+    glm(SR_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
         data = data.in), 
     lm(CWM_scaled ~ climate_scaled, data = data.in), 
     lm(resistance.log_scaled ~ FD_scaled + CWM_scaled + SR_scaled, 
@@ -560,216 +562,23 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", file.in){
 }
 
 
-#' Function to estimate of FD metrics on resilience
+
+
+
+
+
+
+#' Plot FD effect on resilienc along climate with quadratic term
 #' @param data_model df formatted to fit model
 #' @param R_metric Richness metric to choose ("nsp", "H" or "D")
+#' @param mod_selection character to specify if model should be selected using 
+#'                      AIC ("AIC") or p-values ("pvalue")
 #' @param file.in Name of the file to save, inlcuding path
-plot_FD_and_climate_effect_resilience = function(data_model, R_metric = "nsp", file.in){
+plot_FD_effect_vs_climate_quadra = function(
+  data_model, R_metric = "nsp", mod_selection = "pvalue", dir.in){
   
   # create output directory if it doesn't exist
-  create_dir_if_needed(file.in)
-  
-  # Vector of response variables for which to run models
-  response.vec = c("resilience", "resistance", "recovery")
-  
-  
-  
-  # Data to fit the models for disturbance i
-  data.in = cbind(data_model[, response.vec], 
-                  scale((data_model %>% 
-                           dplyr::select("R" = R_metric, "FD", "CWM", "Clim" = "pca1")), 
-                        center = TRUE, scale = TRUE)) %>%
-    mutate(resilience = log(resilience), 
-           recovery = log(recovery))
-  
-  
-  
-  # Data to fit the models for disturbance i
-  data.in = cbind(data_model[, response.vec], 
-                  scale((data_model %>% 
-                           dplyr::select(R = nsp, FD, CWM, Clim = pca1)), 
-                        center = TRUE, scale = TRUE)) %>%
-    mutate(resilience = log(resilience), 
-           recovery = log(recovery))
-  
-  # Loop on all response variables
-  for(j in 1:length(response.vec)){
-    
-    # Fit model
-    eval(parse(text = paste0(
-      "model.j = lm(", response.vec[j], " ~ R*Clim + FD*Clim + CWM*Clim, data = data.in)"
-    )))
-    
-    # Output data set for model i j 
-    data.out.j = data.frame(
-      var.resp = response.vec[j], 
-      var.exp = names(coef(model.j))[-1], 
-      est = as.numeric(coef(model.j)[-1]), 
-      est.low = as.numeric(confint(model.j)[-1, 1]), 
-      est.high = as.numeric(confint(model.j)[-1, 2])
-    )
-    
-    # Add to the final output dataset
-    if(j == 1) data.out = data.out.j
-    else data.out = rbind(data.out, data.out.j)
-  }
-  
-  
-  
-  # Plot the estimates
-  plot.out = data.out %>%
-    mutate(significance = ifelse(est.low > 0 | est.high < 0, "yes", "no")) %>%
-    mutate(var.resp = factor(var.resp, levels = c("resistance", "recovery", "resilience"))) %>%
-    ggplot(aes(x = var.exp, y = est, color = significance)) + 
-    geom_errorbar(aes(ymin = est.low, ymax = est.high),
-                  width = 0) + 
-    geom_point(shape = 21, fill = "#2A9D8F") +
-    xlab("") + ylab("Effect on resilience metric") +
-    scale_color_manual(values = c(`no` = "gray", `yes` = "black")) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-    facet_grid(. ~ var.resp, scales = "free") +
-    theme(panel.background = element_rect(color = "black", fill = "white"), 
-          panel.grid = element_blank(), 
-          strip.background = element_blank(), 
-          strip.text = element_text(face = "bold"), 
-          legend.position = "none") + 
-    coord_flip()
-  
-  # Save plot i
-  ggsave(file.in, plot.out, width = 14, height = 7, units = "cm", 
-         dpi = 600, bg = "white")
-  
-  # Return name of the file saved
-  return(file.in)
-  
-}
-
-
-
-
-#' Function to estimate of FD metrics on resilience
-#' @param data_model df formatted to fit model
-#' @param R_metric Richness metric to choose ("nsp", "H" or "D")
-#' @param file.in Name of the file to save, inlcuding path
-plot_predictions = function(data_model, R_metric = "nsp", file.in){
-  
-  # create output directory if it doesn't exist
-  create_dir_if_needed(file.in)
-  
-  # Vector of response variables for which to run models
-  response.vec = c("resilience", "resistance", "recovery")
-  
-  
-  
-  # Data to fit the models for disturbance i
-  data.in = cbind(data_model[, response.vec], 
-                  scale((data_model %>% 
-                           dplyr::select("R" = R_metric, "FD", "CWM", "Clim" = "pca1")), 
-                        center = TRUE, scale = TRUE)) %>%
-    # Convert strictly positive variables to log scale
-    mutate(resilience = log(resilience), 
-           recovery = log(recovery))
-  
-  # Model to scale climate
-  scale.clim = lm(pca1 ~ Clim, 
-                  data = data.frame(pca1 = data_model$pca1, 
-                                    Clim = data.in$Clim))
-  
-  # Loop on all response variables
-  for(j in 1:length(response.vec)){
-    
-    # Fit model
-    eval(parse(text = paste0(
-      "model.j = lm(", response.vec[j], " ~ R*Clim + FD*Clim + CWM*Clim, data = data.in)"
-    )))
-    
-    # Output data set for model i j 
-    data0.j = expand.grid(
-      Clim = seq(from = min(data.in$Clim), to = max(data.in$Clim), length.out = 100),
-      var.resp = response.vec[j], 
-      exp.quantile = c(0.2, 0.8))
-    
-    # Rescale climate
-    data0.j$pca1 = predict(scale.clim, newdata = data0.j)
-    
-    # Vector of explanatory variables that are not climate
-    vec.exp = c("R", "FD", "CWM")
-    
-    # Loop on the three explanatory variables
-    for(k in 1:length(vec.exp)){
-      
-      # Add name of the explanatory variable
-      data.jk = data0.j %>% mutate(var.exp = vec.exp[k])
-      
-      # Write variable k with different value depending on quantile
-      eval(parse(text = paste0(
-        "data.jk = data.jk %>% mutate(", vec.exp[k] ,"= quantile(data.in$", 
-        vec.exp[k], ", probs = exp.quantile, na.rm = TRUE))"
-      )))
-      
-      # Other variables have their mean value
-      eval(parse(text = paste0(
-        "data.jk = data.jk %>% mutate(", 
-        paste(paste0(vec.exp[-k], " = mean(data.in$", vec.exp[-k], ", na.rm = TRUE)"), 
-              collapse = ", "), ")"
-      )))
-      
-      # Predict resilience metric and confidence interval
-      data.jk = cbind.data.frame(data.jk, predict(
-        model.j, newdata = data.jk, type = "response", 
-        interval = "confidence", level = 0.95)) %>%
-        gather(key = "variable", value = "value", "fit", "lwr", "upr") %>%
-        mutate(value = ifelse(var.resp == "resistance", value, exp(value))) %>%
-        spread(key = "variable", value = "value")
-      
-      # Add to the final output dataset
-      if(j == 1 & k == 1) data.out = data.jk
-      else data.out = rbind(data.out, data.jk)
-      
-    }
-    
-  }
-  
-  
-  # Plot the estimates
-  plot.out = data.out %>%
-    mutate(FD_metric = paste0(100*exp.quantile, "% quantile")) %>%
-    mutate(var.resp = factor(var.resp, levels = c("resistance", "recovery", "resilience"))) %>%
-    ggplot(aes(x = pca1, y = fit, group = FD_metric, 
-               alpha = FD_metric, linetype = FD_metric)) + 
-    geom_line(color = "#001524") + 
-    geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, fill = "#2A9D8F") +
-    xlab("Coordinate on the sgdd-wai PCA") + ylab("Resilience metric") +
-    scale_alpha_manual(values = c(0.3, 0.6)) +
-    scale_linetype_manual(values = c("dashed", "solid")) +
-    facet_grid(var.resp ~ var.exp, scales = "free") +
-    theme(panel.background = element_rect(color = "black", fill = "white"), 
-          panel.grid = element_blank(), 
-          strip.background = element_blank(), 
-          strip.text = element_text(face = "bold"), 
-          legend.key = element_blank())
-  
-  # Save plot i
-  ggsave(file.in, plot.out, width = 18, height = 9 , units = "cm", 
-         dpi = 600, bg = "white")
-  
-  # Return name of the file saved
-  return(file.in)
-  
-}
-
-
-
-
-
-#' Function to estimate of FD metrics on resilience
-#' @param data_model df formatted to fit model
-#' @param R_metric Richness metric to choose ("nsp", "H" or "D")
-#' @param file.in Name of the file to save, inlcuding path
-plot_FD_effect_vs_climate = function(data_model, R_metric = "nsp", file.in){
-  
-  # create output directory if it doesn't exist
-  create_dir_if_needed(file.in)
+  create_dir_if_needed(paste0(dir.in, "/test"))
   
   # Vector of response variables for which to run models
   response.vec = c("resilience", "resistance", "recovery")
@@ -789,7 +598,8 @@ plot_FD_effect_vs_climate = function(data_model, R_metric = "nsp", file.in){
                         center = TRUE, scale = TRUE)) %>%
     # Convert strictly positive variables to log scale
     mutate(resilience = log(resilience), 
-           recovery = log(recovery))
+           recovery = log(recovery), 
+           Clim2 = Clim^2)
   
   # Model to scale climate
   scale.clim = lm(pca1 ~ Clim, 
@@ -799,70 +609,261 @@ plot_FD_effect_vs_climate = function(data_model, R_metric = "nsp", file.in){
   # Initialize data with climatic gradient
   data.clim = data.frame(
     Clim = seq(from = min(data.in$Clim), to = max(data.in$Clim), length.out = 100)) %>%
-    mutate(pca1 = predict(scale.clim, newdata = .)) %>%
+    mutate(pca1 = predict(scale.clim, newdata = .), 
+           pca1.scaled.2 = Clim^2) %>%
     rename(pca1.scaled = Clim)
   
+  # Vector that contains interaction terms
+  vec.interaction = c("", "*Clim", "*Clim2")
   
+  #' Function to build vector that contains full expression 
+  #' @param vec.exp.in vector of explanatory variables
+  #' @param vec.interaction.in vector containing interaction term
+  build_expr = function(vec.exp.in, vec.interaction.in){
+    vec.out = c()
+    for(exp in vec.exp.in) vec.out = c(
+      vec.out, paste(paste0(exp, vec.interaction.in), collapse = " + ")
+    )
+    return(vec.out)
+  }
+  
+  # Small function to extract position of an interaction between two factors 
+  # in coefficients of a model
+  find_interaction = function(word1, word2, vec){
+    which(vec %in% c(paste0(word1, ":", word2), paste0(word2, ":", word1)))
+  }
+  
+  # Initialize list of models
+  model.list = list()
+  
+  # Initialize dataset contianing prediction vs data
+  data.predict = data.frame(resp.var = character(0), 
+                            observed = numeric(0), 
+                            fitted = numeric(0))
+  
+  # Initialize dataset to plot model predictions against climate
+  data.fit.clim = data.frame(
+    var.resp = character(0), pca1 = numeric(0), fit = numeric(0), 
+    lwr = numeric(0), upr = numeric(0)
+  )
+  
+  # Initialize dataset containing metric vs climate data + fit
   # Loop on all response variables
   for(j in 1:length(response.vec)){
     
-    # Fit model
-    eval(parse(text = paste0(
-      "model.j = lm(", response.vec[j], " ~ R*Clim + FD*Clim + CWM*Clim, data = data.in)"
-    )))
+    # Write different part of the formula
+    formula.beg.j = paste0("model.ref.j = lm(", response.vec[j], " ~ ")
+    formula.end.j = ", data = data.in)"
+    formula.model.ref.j = paste(build_expr(vec.exp, vec.interaction), collapse = " + ")
     
-    # Initialize table with coefficients value
-    data.coef = as.data.frame(matrix(
-      NA, nrow = 10000, ncol = length(model.j$coefficients), dimnames = list(
-        c(), gsub("\\:", "\\.", names(model.j$coefficients)))))
+    # Fit reference model
+    eval(parse(text = paste0(formula.beg.j, formula.model.ref.j, formula.end.j)))
     
-    # Loop on all coefficients 
-    for(i in 2:dim(data.coef)[2]){
-      # Estimate
-      i.mean = summary(model.j)$coefficients[i, 1]
-      # Standard deviation
-      i.sd = summary(model.j)$coefficients[i, 2]
-      # Generate distribution of coefficient (normal distribution)
-      data.coef[, i] = rnorm(n = dim(data.coef)[1], mean = i.mean, sd = i.sd)
+    # Vector containing the pvalue of each factor in the full model
+    pval.vec.j = summary(model.ref.j)$coefficients[, 4]
+    
+    # Initialize vector for the final formula of model j
+    formula.model.j = c()
+    
+    
+    # First loop on all explanatory variables to remove non significant interactions
+    for(i1 in 1:length(vec.exp)){
+      
+      # Initialize the formula
+      formula.model.ij = ""
+      
+      # Run two models: 
+      
+      # - without quadratic term
+      # --- Formula
+      formula.model.ij.simple = paste(
+        c(build_expr(vec.exp[i1], vec.interaction[1:2]), 
+          build_expr(vec.exp[!(c(1:3) %in% i1)], vec.interaction)), 
+        collapse = " + ")
+      # --- fit
+      eval(parse(text = paste0(
+        "model.ij.simple = lm(", response.vec[j], " ~ ", formula.model.ij.simple, formula.end.j)))
+      # --- Vector containing the pvalue of each factor in the model
+      pval.vec.ij.simple = summary(model.ij.simple)$coefficients[, 4]
+      
+      # - without interaction
+      # --- Formula
+      formula.model.ij.0 = paste(
+        c(build_expr(vec.exp[i1], vec.interaction[1]), 
+          build_expr(vec.exp[!(c(1:3) %in% i1)], vec.interaction)), 
+        collapse = " + ")
+      # --- fit
+      eval(parse(text = paste0(
+        "model.ij.0 = lm(", response.vec[j], " ~ ", formula.model.ij.0, formula.end.j)))
+      
+      # Select the right formula based on AIC
+      if(mod_selection == "AIC"){
+        if(AIC(model.ij.simple) - AIC(model.ref.j) > 2){
+          if(AIC(model.ij.0) - AIC(model.ij.simple) > 2){
+            formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction[1]))
+          } else {
+            formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction[1:2]))
+          }
+        } else {
+          formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction))
+        }
+      }
+      
+      
+      # Select the right formula based on pvalue
+      if(mod_selection == "pvalue"){
+        if(pval.vec.j[find_interaction(vec.exp[i1], "Clim2", names(pval.vec.j))] >= 0.05){
+          if(pval.vec.ij.simple[find_interaction(vec.exp[i1], "Clim", names(pval.vec.ij.simple))] >= 0.05){
+            formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction[1]))
+          } else {
+            formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction[1:2]))
+          }
+        } else { 
+          formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction))
+        }
+      }
+      
+      # Add selected formula to the vector of formula
+      formula.model.j = c(formula.model.j, formula.model.ij)
     }
-    # Remove intercept column
-    data.coef = data.coef[, -1]
     
-    # Merge with climate data
-    data.j = expand_grid(data.clim, data.coef) %>%
-      mutate(var.resp = response.vec[j]) %>%
-      mutate(R_effect = R + R.Clim*pca1.scaled, 
-             FD_effect = FD + Clim.FD*pca1.scaled, 
-             CWM_effect = CWM + Clim.CWM*pca1.scaled) %>%
-      dplyr::select(pca1, R_effect, FD_effect, CWM_effect) %>%
-      gather(key = "effect", value = "value", "R_effect", "FD_effect", "CWM_effect") %>%
-      group_by(pca1, effect) %>%
-      summarise(mean = mean(value, na.rm = TRUE), 
-                lwr = quantile(value, 0.025, na.rm = TRUE), 
-                upr = quantile(value, 0.975, na.rm = TRUE)) %>%
-      mutate(var.resp = response.vec[j])
+    # Paste together elements of formula model j
+    formula.model.j = paste(formula.model.j, collapse = " + ")
     
-    # Fill the text dataset
-    for(k in vec.exp){
-      id_text_jk = which(data.text$var.exp == k & data.text$var.resp == response.vec[j])
-      data.text[id_text_jk, "text"] = paste0(
-        k, ": ", pvalue(summary(model.j)$coefficients[k, 4], add_p = TRUE, accuracy = 0.01), 
-        "\n", k, "*Clim: ", pvalue(summary(model.j)$coefficients[
-          intersect(grep(k, names(model.j$coefficients)), 
-                    grep("Clim", names(model.j$coefficients))), 4], add_p = TRUE, accuracy = 0.01))
+    # Run final model for response variable j
+    eval(parse(text = paste0("model.j = lm(", response.vec[j], " ~ ", 
+                             formula.model.j, formula.end.j)))
+    
+    # Coefficients of the model
+    beta.j = coef(model.j)
+    
+    # Variance covariance matrix of the model
+    vcov.j = vcov(model.j)
+    
+    # Loop on all explanatory variables
+    for(i2 in 1:length(vec.exp)){
+      
+      # Data for predictions
+      # -- Initialize matrix with 0
+      newdata.j = matrix(0, nrow = dim(data.clim)[1], ncol = length(beta.j), 
+                         dimnames = list(c(), names(beta.j)))
+      # -- Add response variable (set to 1) and wirte pvalue
+      newdata.j[, vec.exp[i2]] = 1
+      text_ij = paste0(vec.exp[i2], ": ", pvalue(
+        summary(model.j)$coefficients[vec.exp[i2], 4], add_p = TRUE, accuracy = 0.01))
+      # -- Add interaction with climate (equals 1 * climate scaled) if included in the model
+      if(length(grep(vec.exp[i2], names(beta.j))) > 1){
+        if(paste0(vec.exp[i2], ":Clim") %in% names(beta.j)) int.name.ij = paste0(vec.exp[i2], ":Clim")
+        if(paste0("Clim:", vec.exp[i2]) %in% names(beta.j)) int.name.ij = paste0("Clim:", vec.exp[i2])
+        newdata.j[, int.name.ij] = data.clim$pca1.scaled
+        # -- Also add text to the text vector
+        text_ij = c(text_ij, paste0(vec.exp[i2], "*Clim: ", pvalue(
+          summary(model.j)$coefficients[int.name.ij, 4], add_p = TRUE, accuracy = 0.01)))
+      }
+      # -- Add interaction with climate quadratic (equals 1 * climate scaled^2)
+      if(length(grep(vec.exp[i2], names(beta.j))) > 2){
+        if(paste0(vec.exp[i2], ":Clim2") %in% names(beta.j)) int2.name.ij = paste0(vec.exp[i2], ":Clim2")
+        if(paste0("Clim2:", vec.exp[i2]) %in% names(beta.j)) int2.name.ij = paste0("Clim2:", vec.exp[i2])
+        newdata.j[, int2.name.ij] = data.clim$pca1.scaled.2
+        # -- Also add text to the text vector
+        text_ij = c(text_ij, paste0(vec.exp[i2], "*Clim2: ", pvalue(
+          summary(model.j)$coefficients[int2.name.ij, 4], add_p = TRUE, accuracy = 0.01)))
+      }
+      
+      
+      # Predictions
+      # -- Mean effect
+      pred.ij = newdata.j %*% beta.j
+      # -- Standard error
+      pred.ij.se <- sqrt(diag(newdata.j %*% vcov.j %*% t(newdata.j)))
+      # -- Statistical criteria
+      alpha <- 0.05
+      crit <- -qnorm(alpha/2)
+      # -- Upper and lower interval
+      lwr.ij <- pred.ij-crit*pred.ij.se 
+      upr.ij <- pred.ij+crit*pred.ij.se 
+      
+      # Data ij
+      data.ij = data.frame(pca1 = data.clim$pca1, 
+                           effect = paste0(vec.exp[i2], "_effect"), 
+                           mean = pred.ij, 
+                           lwr = lwr.ij, 
+                           upr = upr.ij, 
+                           var.resp = response.vec[j])
+      
+      # Fill the text dataset
+      id_text_ij = which(data.text$var.exp == vec.exp[i2] & data.text$var.resp == response.vec[j])
+      data.text[id_text_ij, "text"] = paste(text_ij, collapse = "\n")
+      
+      
+      # Add to the final output dataset
+      if(j == 1 & i2 == 1) data.out = data.ij
+      else data.out = rbind(data.out, data.ij)
     }
     
-    # Add to the final output dataset
-    if(j == 1) data.out = data.j
-    else data.out = rbind(data.out, data.j)
+    # Prepare data to plot predicted resilience vs climate
+    newdata.clim.j = matrix(0, nrow = dim(data.clim)[1], ncol = length(beta.j), 
+                            dimnames = list(c(), names(beta.j)))
+    # -- Add response variable (set to 1) and write pvalue
+    newdata.clim.j[, "Clim"] = data.clim$pca1.scaled
+    if("Clim2" %in% names(beta.j)) newdata.clim.j[, "Clim2"] = data.clim$pca1.scaled.2
+    newdata.clim.j[, "(Intercept)"] = 1
+    pred.clim.j = newdata.clim.j %*% beta.j
+    pred.se.clim.j <- sqrt(diag(newdata.clim.j %*% vcov.j %*% t(newdata.clim.j)))
+    data.fit.clim.j = data.frame(
+      var.resp = response.vec[j], 
+      pca1 = data.clim$pca1,
+      fit = pred.clim.j, 
+      lwr = pred.clim.j-1.96*pred.se.clim.j, 
+      upr = pred.clim.j+1.96*pred.se.clim.j 
+    )
+    data.fit.clim = rbind(data.fit.clim, data.fit.clim.j)
     
+    # Add model to the output model list
+    eval(parse(text = paste0("model.list$", response.vec[j], " = model.j")))
+    
+    # Add prediction vs observed
+    data.predict = rbind(
+      data.predict, 
+      data.frame(resp.var = response.vec[j],
+                 observed = data.in[, response.vec[j]], 
+                 fitted = predict(model.j, newdata = data.in)))
   }
+  
+  # Plot the prediction and data of resilience vs climate
+  plot.fit.clim = data.fit.clim %>%
+    mutate(fit = ifelse(var.resp == "resistance", fit, exp(fit)), 
+           lwr = ifelse(var.resp == "resistance", lwr, exp(lwr)), 
+           upr = ifelse(var.resp == "resistance", upr, exp(upr))) %>%
+    ggplot(aes(y = fit, x = pca1, group = 1)) + 
+    geom_line() + 
+    geom_point(data = (data_model %>%
+                         gather(key = "var.resp", value = "fit", response.vec)), 
+               inherit.aes = TRUE, 
+               shape = 21, color = "black", fill = "grey", alpha = 0.5) +
+    geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.5) + 
+    facet_wrap(~ var.resp, nrow = 1, scales = "free") + 
+    xlab("Coordinate on the wai-sgdd pca") + ylab("Value of\nresilience metric") + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank())
   
   # Add position on x and y axis for data.text
   data.text = data.text %>%
     mutate(pca1 = min(data.out$pca1) + 0.05*diff(range(data.out$pca1)), 
            mean = max(data.out$mean) - 0.03*diff(range(data.out$mean))) %>%
     mutate(effect = paste0(var.exp, " effect"))
+  
+  # Plot predicted vs observed
+  plot.predictions = data.predict %>%
+    ggplot(aes(x = observed, y = fitted)) + 
+    geom_point(shape = 21, color = "black", fill = "grey", alpha = 0.5) + 
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") + 
+    facet_wrap(~ resp.var, scales = "free") + 
+    xlab("Observed value") + ylab("Predicted value") + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank())
   
   # Plot the estimates
   plot.out = data.out %>%
@@ -883,15 +884,25 @@ plot_FD_effect_vs_climate = function(data_model, R_metric = "nsp", file.in){
           legend.key = element_blank(), 
           legend.title = element_blank())
   
-  # Save plot i
-  ggsave(file.in, plot.out, width = 13, height = 12 , units = "cm", 
+  # Name of the plot to save
+  file.plot = paste0(dir.in, "/fd_effect_climate.jpg")
+  file.plot.predictions = paste0(dir.in, "/observed_vs_predicted.jpg")
+  file.plot.fitclim = paste0(dir.in, "/data_and_fit_clim.jpg")
+  
+  # Save plots
+  ggsave(file.plot, plot.out, width = 13, height = 12 , units = "cm", 
          dpi = 600, bg = "white")
+  ggsave(file.plot.predictions, plot.predictions, width = 14, height = 5, 
+         units = "cm", dpi = 600, bg = "white")
+  ggsave(file.plot.fitclim, plot.fit.clim, width = 14, height = 5, 
+         units = "cm", dpi = 600, bg = "white")
   
   # Return name of the file saved
-  return(file.in)
+  return(c(file.plot, file.plot.predictions, file.plot.fitclim))
   
 }
 
+  
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # -- Exploratory plots -----
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

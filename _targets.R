@@ -213,14 +213,10 @@ list(
     data_model_storm, "H", "output/fig_analyses/fig_FD_effect_resilience_storm.jpg"), 
     format = "file"),
   
-  # Plot the effect of FD and climate on resilience
-  tar_target(fig_FD_and_climate_effect_resilience, plot_FD_and_climate_effect_resilience(
-    data_model_storm, "H", "output/fig_analyses/fig_FD_and_climate_effect_resilience_storm.jpg"), 
-    format = "file"),
   
-  # Plot predictions of resilience with FD metrics and climate
-  tar_target(fig_predictions, plot_predictions(
-    data_model_storm, "H", "output/fig_analyses/fig_predictions_storm.jpg"), format = "file"),
+  # Plot how the FD effect changes with climate
+  tar_target(fig_FD_effect_vs_climate_quadra, plot_FD_effect_vs_climate_quadra(
+    data_model_storm, "H", "pvalue", "output/fig_analyses"), format = "file"),
   
   
   # Make a network analysis with peacewise SEM
@@ -233,10 +229,6 @@ list(
   tar_target(fig_sem_storm_nsp, plot_sem(
     data_model_storm, "FD", "nsp", "recovery", "output/fig_analyses/sem_storm_nsp.jpg"), 
     format = "file"), 
-  
-  # Plot how the FD effect changes with climate
-  tar_target(fig_FD_effect_vs_climate, plot_FD_effect_vs_climate(
-    data_model_storm, "H", "output/fig_analyses/fig_fd_effect_vs_climate.jpg"), format = "file"),
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Exploratory plots -----
