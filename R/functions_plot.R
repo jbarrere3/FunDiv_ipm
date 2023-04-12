@@ -217,8 +217,11 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
     filter(pca1_median %in% subset(data, climate != 0)$pca1_median)
   
   # Convert climate in a factor
-  data = data %>%
-    mutate(climate = factor(climate, levels = as.character(c(0:max(.$climate)))))
+  datatest = data %>%
+    mutate(climate = ifelse(climate == 0, "beyond\nselected\nrange", paste0("clim", climate))) %>%
+    mutate(climate = factor(climate, levels = c(
+      "beyond\nselected\nrange", paste0("clim", c(0:max(data$climate)))
+    )))
   
   # Histogram adapted to the climatic gradient
   hist = res.ind %>%
@@ -230,7 +233,7 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
       color.data %>% mutate(
         color = ifelse(pca1_median %in% color.data.map$pca1_median, color, "gray"))
     )$color) +
-    ylab("Number of\nNFI plots") + 
+    ylab("Number of NFI plots") + 
     theme(panel.background = element_rect(color = "black", fill = "white"), 
           panel.grid = element_blank(), 
           axis.text = element_blank(), 
@@ -242,30 +245,104 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
   plot.map <- ne_countries(scale = "medium", returnclass = "sf") %>%
     ggplot(aes(geometry = geometry)) +
     geom_sf(fill = "#343A40", color = "gray", show.legend = F, size = 0.2) + 
-    geom_sf(data = data, aes(color = climate), size = 0.01, alpha = 0.7) +
+    geom_sf(data = datatest, aes(color = climate), size = 0.01, alpha = 0.5) +
     scale_color_manual(
       values = c("gray", colorRampPalette(
         c(color.data.map$color[1], color.data.map$color[dim(color.data.map)[1]]))(
-          length(names(climate.in))+1))) +
+          length(names(climate.in))))) +
     coord_sf(xlim = c(-10, 32), ylim = c(36, 71)) +
     theme(panel.background = element_rect(color = 'black', fill = 'white'), 
           panel.grid = element_blank(), 
-          legend.position = "none") +
+          legend.title = element_blank(), 
+          legend.key = element_blank()) + 
+    guides(color = guide_legend(override.aes = list(size=5, alpha = 0.85))) +
     annotation_custom(ggplotGrob(hist), 
-                      xmin = -10, xmax = 4, ymin = 62, ymax = 72)
+                      xmin = -11, xmax = 5, ymin = 61, ymax = 72)
+  
+  
+  
+  
+  # -- 
+  # Make histogram with diversity
+  # -- 
+  
+  
+  # Vector of all species
+  species_vec = colnames(FUNDIV_climate_species)[grep("_", colnames(FUNDIV_climate_species))]
+  # Remove species with bad estimation or unstable in simulations
+  species_vec = species_vec[!(species_vec %in% c("Quercus_ilex", "Carpinus_betulus"))]
+  # Vector of all species for which we have disturbance parameters
+  data("disturb_coef")
+  species_vec_dist = (disturb_coef %>%
+                        filter(disturbance %in% "storm"))$species
+  # Restrict the species vector to these species
+  species_vec = species_vec[which(species_vec %in% species_vec_dist)]
+  
+  
+  
+  
+  # species combinations for this climate based on data (frequency method)
+  # -- Paste all species presence absence to create binary code
+  eval(parse(text = paste0(
+    "data.sp <- FUNDIV_climate_species %>% mutate(combi = paste0(", 
+    paste(species_vec, collapse = ", "), "))")))
+  # -- Calculate the number of species per species combination
+  eval(parse(text = paste0(
+    "data.sp <- data.sp %>% mutate(n.sp = ", 
+    paste(species_vec, collapse = " + "), ")")))
+  # -- Restrict to columns of interest
+  data.sp = data.sp %>%
+    dplyr::select(plot = plotcode, combi, n.sp)
+  # -- count combinations per richness and per climate
+  data.plot.sp = datatest %>%
+    # Add combinations and richness
+    left_join(data.sp, by = "plot") %>%
+    filter(climate != "beyond\nselected\nrange" & n.sp > 0) %>%
+    st_drop_geometry() %>%
+    # Count combinations per richness and climate
+    dplyr::select(climate, combi, n.sp) %>%
+    distinct() %>%
+    group_by(climate, n.sp) %>%
+    summarise(n.combi = n()) %>%
+    # Divide into combinations selected and not selected
+    mutate(included = ifelse(n.combi <= 10, n.combi, 10), 
+           not_included = ifelse(n.combi >= 10, n.combi - 10, 0)) %>%
+    dplyr::select(-n.combi) %>%
+    gather(key = "inclusion", value = "n.combi", "included", "not_included")
+  
+  # Plot the combinations per richness and per climate
+  plot.sp = data.plot.sp %>%
+    mutate(inclusion = factor(inclusion, levels = c("not_included", "included"))) %>%
+    ggplot(aes(x = n.sp, y = n.combi, fill = climate, color = inclusion)) + 
+    geom_bar(stat = "identity", aes(alpha = inclusion)) + 
+    facet_wrap(~ climate, nrow = 2) + 
+    scale_alpha_manual(values = c(0.8, 1)) +
+    scale_color_manual(values = c("gray", "black")) +
+    scale_fill_manual(values = colorRampPalette(
+      c(color.data.map$color[1], color.data.map$color[dim(color.data.map)[1]]))(
+        length(names(climate.in)))) +
+    geom_hline(yintercept = 10, linetype = "dashed", color = "red") +
+    xlab("Species richness") + ylab("Number of observed\ncombinations") +
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          legend.position = "none")
   
   
   # Final plot
-  plot.out = plot_grid(plot.pca, plot.map, nrow = 1, rel_widths = c(0.7, 1), 
-                       labels = c("(a)", "(b)"), scale = c(0.85, 0.85))
+  plot.out = plot_grid(plot_grid(plot.pca, plot.map, nrow = 1, rel_widths = c(0.55, 1), 
+                                 labels = c("(a)", "(b)"), scale = c(0.85, 0.85)), 
+                       plot.sp, nrow = 2, labels = c("", "(c)"), 
+                       scale = c(1, 0.85))
   
   
   # Save plot i
-  ggsave(file.in, plot.out, width = 18, height = 13, units = "cm", 
+  ggsave(file.in, plot.out, width = 17, height = 17, units = "cm", 
          dpi = 600, bg = "white")
   
   # Return name of the file
   return(file.in)
+  
 }
 
 
