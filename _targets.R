@@ -119,58 +119,81 @@ list(
   tar_target(resilience_storm, get_resilience_metrics(
    sim_disturbance_storm, disturbance.df_storm, forest_list_storm)),
   # -- Format data together
-  tar_target(data_model_storm, get_data_model(climate_storm, resilience_storm, FD_storm)),
+  tar_target(data_model_storm_all, get_data_model(climate_storm, resilience_storm, FD_storm)),
+  
+  # Re-run simulations for populations that did not reach equil
+  # -- Make list of forest that did not reach equilibrium
+  tar_target(forest_list_storm_noneq, get_forest_list_noneq(
+    data_model_storm_all, forest_list_storm, sim_equilibrium_storm)),
+  # -- If od the forests that did not reach equilibrium
+  tar_target(ID.forest_storm_noneq, forest_list_storm_noneq$ID.forest),
+  # -- Re-run simulation till real equilibrium, and make simul with disturbance
+  tar_target(sim_disturbance_storm_noneq, make_simulations_disturbance_noneq(
+    climate_storm, harv_rules.ref, species_list_storm, forest_list_storm_noneq,
+    species_storm, sim_equilibrium_storm, ID.forest_storm_noneq, disturbance.df_storm),
+    pattern = map(ID.forest_storm_noneq), iteration = "vector", format = "file"),
+  # -- Extract results
+  tar_target(FD_storm_noneq, get_FD(
+    forest_list_storm_noneq, sim_disturbance_storm_noneq, pc1_per_species)),
+  tar_target(resilience_storm_noneq, get_resilience_metrics(
+    sim_disturbance_storm_noneq, disturbance.df_storm, forest_list_storm_noneq)),
+  tar_target(data_model_storm_noneq, get_data_model(
+    climate_storm, resilience_storm_noneq, FD_storm_noneq)),
+
+  # -- For the analyses, only keep simulations that reached equilibrium
+  tar_target(data_model_storm, rbind(subset(data_model_storm_all, SD < 0.15), 
+                                     subset(data_model_storm_noneq, SD < 0.15))),
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Make simulations with storm disturbances and random selection -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
-  # -- generate one climate object per iteration with branching
-  tar_target(climate_storm_random, make_climate(
-    FUNDIV_climate_species, quantiles.in = climate_list_storm[[ID.climate_storm]], 
-    "storm", 10, exclude.in = c("Carpinus_betulus", "Quercus_ilex"), 
-    method = "random"), pattern = map(ID.climate_storm), iteration = "list"), 
-  
-  # Make species objects
-  # -- First: list all species object to make
-  tar_target(species_list_storm_random, make_species_list(climate_storm_random, "storm_random")),
-  # -- Make a vector of ID for each species to make
-  tar_target(ID.species_storm_random, species_list_storm_random$ID.species), 
-  # -- Make the species via branching over ID.species
-  tar_target(species_storm_random, make_species_rds(
-    fit.list.allspecies, climate_storm_random, species_list_storm_random, 
-    ID.species.in = ID.species_storm_random), 
-    pattern = map(ID.species_storm_random), iteration = "vector", format = "file"),
-  
-  # Make simulations 
-  # -- Start with a list of forest to simulate
-  tar_target(forest_list_storm_random, make_forest_list(climate_storm_random, "storm_random")), 
-  # -- Make a vector of ID for each forest to simulate
-  tar_target(ID.forest_storm_random, forest_list_storm_random$ID.forest),
-  # -- Make simulations till equilibrium
-  tar_target(sim_equilibrium_storm_random, make_simulations_equilibrium(
-    climate_storm_random, harv_rules.ref, species_list_storm_random, 
-    forest_list_storm_random, species_storm_random, ID.forest_storm_random), 
-    pattern = map(ID.forest_storm_random), iteration = "vector", format = "file"),
-  # -- Make simulations with disturbance
-  tar_target(sim_disturbance_storm_random, make_simulations_disturbance(
-    climate_storm_random, harv_rules.ref, species_list_storm_random, 
-    forest_list_storm_random, species_storm_random, sim_equilibrium_storm_random, 
-    ID.forest.in = ID.forest_storm_random, disturbance.df_storm), 
-    pattern = map(ID.forest_storm_random), iteration = "vector", format = "file"),
-  
-  # Extract results
-  # -- Get functional diversity
-  tar_target(FD_storm_random, get_FD(
-    forest_list_storm_random, sim_disturbance_storm_random, pc1_per_species)),
-  # -- Get resilience metrics
-  tar_target(resilience_storm_random, get_resilience_metrics(
-    sim_disturbance_storm_random, disturbance.df_storm, forest_list_storm_random)),
-  # -- Format data together
-  tar_target(data_model_storm_random, get_data_model(
-    climate_storm_random, resilience_storm_random, FD_storm_random)),
-  
+  # # -- generate one climate object per iteration with branching
+  # tar_target(climate_storm_random, make_climate(
+  #   FUNDIV_climate_species, quantiles.in = climate_list_storm[[ID.climate_storm]], 
+  #   "storm", 10, exclude.in = c("Carpinus_betulus", "Quercus_ilex"), 
+  #   method = "random"), pattern = map(ID.climate_storm), iteration = "list"), 
+  # 
+  # # Make species objects
+  # # -- First: list all species object to make
+  # tar_target(species_list_storm_random, make_species_list(climate_storm_random, "storm_random")),
+  # # -- Make a vector of ID for each species to make
+  # tar_target(ID.species_storm_random, species_list_storm_random$ID.species), 
+  # # -- Make the species via branching over ID.species
+  # tar_target(species_storm_random, make_species_rds(
+  #   fit.list.allspecies, climate_storm_random, species_list_storm_random, 
+  #   ID.species.in = ID.species_storm_random), 
+  #   pattern = map(ID.species_storm_random), iteration = "vector", format = "file"),
+  # 
+  # # Make simulations 
+  # # -- Start with a list of forest to simulate
+  # tar_target(forest_list_storm_random, make_forest_list(climate_storm_random, "storm_random")), 
+  # # -- Make a vector of ID for each forest to simulate
+  # tar_target(ID.forest_storm_random, forest_list_storm_random$ID.forest),
+  # # -- Make simulations till equilibrium
+  # tar_target(sim_equilibrium_storm_random, make_simulations_equilibrium(
+  #   climate_storm_random, harv_rules.ref, species_list_storm_random, 
+  #   forest_list_storm_random, species_storm_random, ID.forest_storm_random), 
+  #   pattern = map(ID.forest_storm_random), iteration = "vector", format = "file"),
+  # # -- Make simulations with disturbance
+  # tar_target(sim_disturbance_storm_random, make_simulations_disturbance(
+  #   climate_storm_random, harv_rules.ref, species_list_storm_random, 
+  #   forest_list_storm_random, species_storm_random, sim_equilibrium_storm_random, 
+  #   ID.forest.in = ID.forest_storm_random, disturbance.df_storm), 
+  #   pattern = map(ID.forest_storm_random), iteration = "vector", format = "file"),
+  # 
+  # # Extract results
+  # # -- Get functional diversity
+  # tar_target(FD_storm_random, get_FD(
+  #   forest_list_storm_random, sim_disturbance_storm_random, pc1_per_species)),
+  # # -- Get resilience metrics
+  # tar_target(resilience_storm_random, get_resilience_metrics(
+  #   sim_disturbance_storm_random, disturbance.df_storm, forest_list_storm_random)),
+  # # -- Format data together
+  # tar_target(data_model_storm_random, get_data_model(
+  #   climate_storm_random, resilience_storm_random, FD_storm_random)),
+  # 
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Traits -----
@@ -199,7 +222,16 @@ list(
   
   # Plot the pca with species traits
   tar_target(fig_traits_pca, plot_traits_pca(
-    traits, "output/fig_informative/traits.jpg"), format = "file"),
+    traits, get_species_sim(climate_storm), "output/fig_informative/traits.jpg"), 
+    format = "file"),
+  
+  # Plot of the resilience metrics
+  tar_target(fig_metrics, plot_metrics(
+    sim_disturbance_storm[4], "output/fig_informative/metrics.jpg"), format = "file"),
+  tar_target(fig_metrics_60, plot_metrics(
+    sim_disturbance_storm[60], "output/fig_informative/metrics_60.jpg"), format = "file"),
+  tar_target(fig_metrics_51, plot_metrics(
+    sim_disturbance_storm[14], "output/fig_informative/metrics_51.jpg"), format = "file"),
   
   
   
@@ -222,12 +254,6 @@ list(
   # Make a network analysis with peacewise SEM
   tar_target(fig_sem_storm, plot_sem(
     data_model_storm, "FD", "H", "recovery", "output/fig_analyses/sem_storm.jpg"), 
-    format = "file"), 
-  tar_target(fig_sem_storm_thalf, plot_sem(
-    data_model_storm, "FD", "H", "thalf", "output/fig_analyses/sem_storm_thalf.jpg"), 
-    format = "file"), 
-  tar_target(fig_sem_storm_nsp, plot_sem(
-    data_model_storm, "FD", "nsp", "recovery", "output/fig_analyses/sem_storm_nsp.jpg"), 
     format = "file"), 
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

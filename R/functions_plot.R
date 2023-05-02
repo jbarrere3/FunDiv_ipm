@@ -24,8 +24,9 @@
 
 #' Plot traits PCA
 #' @param traits dataframe containing trait value per species
+#' @param species.in vector of the species present in the simulations
 #' @param file.in name including path of the file to save
-plot_traits_pca <- function(traits, file.in){
+plot_traits_pca <- function(traits, species.in, file.in){
   
   # Create directory if needed
   create_dir_if_needed(file.in)
@@ -60,13 +61,17 @@ plot_traits_pca <- function(traits, file.in){
   vec.pca.axis = eval(parse(text = paste0(
     "c(", paste(round(range(res.ind$pca1), digits = 0), collapse = ":"), ")")))
   
+  # - Vector indicating if each species is present in simulations or not
+  species.in.sim = gsub("\\ ", "\\_", res.ind$species) %in% species.in
+  res.ind$species[!species.in.sim]
+  
   # Make the plot
   plot.out <- res.var %>%
     ggplot(aes(x = var.pos, xend = var.pos, y = 0, yend = pca1)) + 
     geom_segment(arrow = arrow(length = unit(0.1, "cm"))) + 
     scale_x_continuous(breaks = res.var$var.pos, 
                        labels = res.var$var, 
-                       limits = c(0.5, max(res.ind$var.pos)+3))+ 
+                       limits = c(0.5, max(res.ind$var.pos)+9))+ 
     scale_y_continuous(breaks = vec.pca.axis)+ 
     xlab("") + 
     ylab(paste0("PCA1 (", round(summary(pca)$importance[2, 1]*100, digits = 2), "%)"))+
@@ -79,27 +84,33 @@ plot_traits_pca <- function(traits, file.in){
     geom_segment(x=max(res.ind$var.pos), xend=max(res.ind$var.pos), 
                  y=min(res.ind$pca1), yend=max(res.ind$pca1)) + 
     # ticks of the x top axis
-    geom_segment(xend=max(res.ind$var.pos)+0.25, data = res.ind, 
+    geom_segment(xend=max(res.ind$var.pos)+0.95, data = res.ind, 
                  aes(x = var.pos, y = pca1, yend = pca1_seq), 
                  size = 0.2) + 
     # ticks of the x top axis bis
-    geom_segment(xend=max(res.ind$var.pos)-0.1, data = res.ind, 
+    geom_segment(xend=max(res.ind$var.pos)-0.3, data = res.ind, 
                  aes(x = var.pos, y = pca1, yend = pca1), 
                  size = 0.2) + 
     # text of the top axis
-    annotate(geom = "text", fontface = 'italic',
-             x = res.ind$var.pos+0.30, y = res.ind$pca1_seq, label = res.ind$species,
+    annotate(geom = "text", fontface = 'italic', x = res.ind$var.pos[!species.in.sim]+1,
+             y = res.ind$pca1_seq[!species.in.sim], label = res.ind$species[!species.in.sim],
              angle = 90, hjust = 0, size = 3) + 
+    annotate(geom = "text", fontface = 'italic', x = res.ind$var.pos[species.in.sim]+1,
+             y = res.ind$pca1_seq[species.in.sim], label = res.ind$species[species.in.sim],
+             angle = 90, hjust = 0, size = 3, color = "blue") + 
     coord_flip() + 
     theme(panel.background = element_rect(fill = "white", color = "white"), 
           panel.grid = element_blank(), 
-          axis.ticks.y = element_blank()) 
+          axis.ticks.y = element_blank(), 
+          axis.text.y = element_text(size = 10), 
+          legend.position = "none") 
   
   # - Save the plot
-  ggsave(file.in, plot.out, width = 14, height = 8, units = "cm", dpi = 600, bg = "white")
+  ggsave(file.in, plot.out, width = 14, height = 6, units = "cm", dpi = 600, bg = "white")
   
   # return the name of all the plots made
   return(file.in)
+  
 }
 
 
@@ -347,6 +358,96 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
 
 
 
+#' Function to plot the three metric of forest response
+#' @param sim_disturbance_file Name of rds file of disturbance simulation
+#' @param file.in Name of the file to save, including path
+plot_metrics = function(sim_disturbance_file, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Read simulation i
+  sim.i = readRDS(sim_disturbance_file)
+  
+  # Format the output
+  data.i <- sim.i %>%
+    # Calculate total basal area per year
+    filter(var == "BAsp") %>%
+    filter(!equil) %>%
+    group_by(time) %>%
+    summarize(BA = sum(value)) %>%
+    mutate(time = round(time/10)*10) %>%
+    ungroup() %>% group_by(time) %>%
+    summarize(BA = mean(BA)) %>%
+    filter(time <= 3500)
+  
+  # Time of disturbance
+  Tdist = 500
+  # Time used to calculate recovery
+  recov.time = 50
+  # Identify Basal area at equilibrium and after disturbance
+  BAeq.i = mean((data.i %>% filter(time < Tdist))$BA)
+  BAdist.i = min(data.i$BA)
+  # Identify slope and intercept after disturbance
+  coef.i = abs(diff((data.i %>% filter(time %in% c(Tdist, Tdist+recov.time)))$BA))/recov.time
+  intercept.i = BAdist.i - coef.i*Tdist
+  # Span in Basal area (for plot scaling)
+  BA.span = diff(range(data.i$BA))
+  
+  # Colors for the different response metrics
+  resistance.color = "#9B2226"
+  recovery.color = "#386641"
+  resilience.color = "#33658A"
+  
+  # Make the final plot
+  plot.out = data.i %>%
+    mutate(lwr = ifelse(BA <= BAeq.i, BA, BAeq.i), 
+           upr = ifelse(BA <= BAeq.i, BAeq.i, BA)) %>%
+    ggplot(aes(x = time, y = BA, group = 1)) + 
+    geom_line() + 
+    # RESISTANCE
+    annotate('text', x = 100, y = BAeq.i + 0.25*BA.span, parse = TRUE, size=5, hjust = 0,
+             label = "Resistance==frac(BA[dist],BA[eq])", color = resistance.color) + 
+    annotate('text', x = 10, y = BAeq.i+1, size=5, hjust = 0, color = resistance.color,
+             label = "BA[eq]", parse = TRUE) +
+    annotate('text', x = 10, y = BAdist.i+1, size=5, hjust = 0, color = resistance.color,
+             label = "BA[dist]", parse = TRUE) +
+    geom_segment(x=0, xend=Tdist, y=BAdist.i, yend=BAdist.i, 
+                 color = resistance.color, linetype = "dashed") +
+    geom_segment(x=0, xend=3000, y=BAeq.i, yend=BAeq.i, 
+                 color = resistance.color, linetype = "dashed") +
+    # RESILIENCE
+    annotate('text', x = 1200, y = BAeq.i - 0.2*BA.span, parse = TRUE, size=5, 
+             hjust = 0, color = resilience.color,
+             label = "Resilience==integral(sqrt((BA(t) - BA[eq])^2)*dt, t[dist], t[dist+3000])") +
+    geom_ribbon(aes(ymin = lwr, ymax = upr), fill = resilience.color, alpha = 0.4, color = NA) +
+    # RECOVERY
+    geom_segment(x=Tdist, xend=(Tdist+75), y=BAdist.i, yend=intercept.i+coef.i*(Tdist+75), 
+                 color = recovery.color, linetype = "solid", 
+                 arrow = arrow(length = unit(0.2, "cm")), size = 1) +
+    annotate('text', x = (Tdist + 100), y = (BAdist.i + 0.05*BA.span), parse = TRUE, size=5, 
+             color = recovery.color, hjust = 0,
+             label = "Recovery==frac((BA(t[dist]+20) - BA[dist]), 20)") +
+    # Finish plotting
+    geom_segment(x=Tdist, xend=Tdist, y=min(data.i$BA) - 0.3*BA.span, yend=BAdist.i, 
+                 color = "black", linetype = "dashed") +
+    annotate('text', x = Tdist+25, y = min(data.i$BA) - 0.25*BA.span, size=5, 
+             hjust = 0, label = "t[dist]", parse = TRUE) +
+    ylim(min(data.i$BA) - 0.3*BA.span, 
+         max(data.i$BA) + 0.3*BA.span) + 
+    xlab("Time (years)") + ylab("Stand basal area (m2)") + 
+    theme(panel.grid = element_blank(), 
+          panel.background = element_rect(fill = "white", color = "black"), 
+          axis.text = element_text(size = 12), 
+          axis.title = element_text(size = 15))
+  
+  # - Save the plot
+  ggsave(file.in, plot.out, width = 17, height = 12, units = "cm", dpi = 600, bg = "white")
+  
+  # return the name of all the plots made
+  return(file.in)
+}
+
 
 
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -384,7 +485,7 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
     mutate(climate_scaled = as.numeric(scale(pca1, center = TRUE, scale = TRUE)), 
            FD_scaled = as.numeric(scale(FD_chosen, center = FALSE, scale = TRUE)), 
            CWM_scaled = as.numeric(scale(CWM, center = TRUE, scale = TRUE)), 
-           SR_scaled = as.numeric(scale(R_chosen, center = FALSE, scale = TRUE)),
+           H_scaled = as.numeric(scale(R_chosen, center = FALSE, scale = TRUE)),
            resistance.log_scaled = as.numeric(scale(resistance.log, center = TRUE, scale = TRUE)), 
            recovery.log_scaled = as.numeric(scale(recovery.log, center = TRUE, scale = TRUE)), 
            resilience.log_scaled = as.numeric(scale(resilience.log, center = TRUE, scale = TRUE)))
@@ -394,15 +495,15 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
   mod_sem = psem(
     glm(FD_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
         data = data.in), 
-    glm(SR_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
+    glm(H_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
         data = data.in), 
     lm(CWM_scaled ~ climate_scaled, data = data.in), 
-    lm(resistance.log_scaled ~ FD_scaled + CWM_scaled + SR_scaled, 
+    lm(resistance.log_scaled ~ FD_scaled + CWM_scaled + H_scaled, 
        data = data.in), 
-    lm(recovery.log_scaled ~ FD_scaled + CWM_scaled + climate_scaled + SR_scaled, 
+    lm(recovery.log_scaled ~ FD_scaled + CWM_scaled + climate_scaled + H_scaled, 
        data = data.in), 
     lm(resilience.log_scaled ~ resistance.log_scaled + recovery.log_scaled + 
-         FD_scaled + CWM_scaled + climate_scaled + SR_scaled, data = data.in)
+         FD_scaled + CWM_scaled + climate_scaled + H_scaled, data = data.in)
   )
   
   
@@ -418,8 +519,8 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
   
   # -- Make a dataset to plot the box with the text
   data.plot.box = data.frame(
-    text = c("climate", "FD", "CWM", "SR", "recovery", "resistance", "resilience"), 
-    center.x = c(0, -4, 4, -10, 1, -7, -2), 
+    text = c("climate", "FD", "CWM", R_metric, "recovery", "resistance", "resilience"), 
+    center.x = c(0, -7, 4.5, -13, 2, -7, -1), 
     height.level = c(4, 3, 3, 3, 2, 2, 1)) %>%
     mutate(ymin = (height.level - 0.5*box.height)*(box.height + box.height.spacing), 
            ymax = ymin + box.height,
@@ -465,13 +566,13 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
               by = "var.exp") %>%
     # Add start and end of each arrow
     mutate(
-      arrow.beg.y = ifelse((var.exp %in% c("SR", "CWM") & var.resp == "resilience"),
+      arrow.beg.y = ifelse((var.exp %in% c(R_metric, "CWM") & var.resp == "resilience"),
                            center.y.resp, (center.y.exp - 0.5*box.height)), 
       arrow.beg.x = center.x.exp, 
-      arrow.end.y = ifelse((var.exp %in% c("SR", "CWM") & var.resp == "resilience"),
+      arrow.end.y = ifelse((var.exp %in% c(R_metric, "CWM") & var.resp == "resilience"),
                            center.y.resp, (center.y.resp + 0.5*box.height)), 
       arrow.end.x = case_when(
-        (var.exp == "SR" & var.resp == "resilience") ~ (center.x.resp - 0.5*box.width), 
+        (var.exp == R_metric & var.resp == "resilience") ~ (center.x.resp - 0.5*box.width), 
         (var.exp == "CWM" & var.resp == "resilience") ~ (center.x.resp + 0.5*box.width),
         TRUE ~ center.x.resp)) %>%
     # Report significance, sign and absolute value of estimate
@@ -499,7 +600,7 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
   data.box.cat = data.plot.box %>%
     mutate(cat = case_when(
       text == "climate" ~ "Climate", 
-      text %in% c("SR", "FD", "CWM") ~ "Species\ncomposition", 
+      text %in% c(R_metric, "FD", "CWM") ~ "Species\ncomposition", 
       text %in% c("resistance", "recovery", "resilience") ~ "Resilience"
     )) %>%
     group_by(cat) %>%
@@ -537,7 +638,7 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
   # -- plot the box with arrows
   plot.out = plot.box + 
     # Vertical segment
-    geom_segment(data = subset(data.plot.arrow, var.exp %in% c("SR", "CWM") & 
+    geom_segment(data = subset(data.plot.arrow, var.exp %in% c(R_metric, "CWM") & 
                                  var.resp == "resilience"), 
                  aes(x = center.x.exp, xend = center.x.exp, 
                      y = center.y.exp - 0.5*box.height, yend = center.y.resp, 
@@ -581,7 +682,7 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", file.in){
   
   # Data to fit the models
   data.in = cbind(data_model[, response.vec], 
-                  scale((data_model %>% dplyr::select("R" = R_metric, "FD", "CWM")), 
+                  scale((data_model %>% dplyr::select("H" = R_metric, "FD", "CWM")), 
                         center = TRUE, scale = TRUE)) %>%
     mutate(resilience = log(resilience), 
            recovery = log(recovery))
@@ -591,13 +692,13 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", file.in){
     
     # Fit model
     eval(parse(text = paste0(
-      "model.j = lm(", response.vec[j], " ~ R + FD + CWM, data = data.in)"
+      "model.j = lm(", response.vec[j], " ~ H + FD + CWM, data = data.in)"
     )))
     
     # Output data set for model i j 
     data.out.j = data.frame(
       var.resp = response.vec[j], 
-      var.exp = c("R", "FD", "CWM"), 
+      var.exp = c("H", "FD", "CWM"), 
       var.pos = c(1:3),
       est = as.numeric(coef(model.j)[-1]), 
       est.low = as.numeric(confint(model.j)[-1, 1]), 
@@ -614,12 +715,13 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", file.in){
   plot.out = data.out %>%
     mutate(significance = ifelse(est.low > 0 | est.high < 0, "yes", "no")) %>%
     mutate(var.resp = factor(var.resp, levels = c("resistance", "recovery", "resilience"))) %>%
-    ggplot(aes(x = var.exp, y = est, color = significance)) + 
+    ggplot(aes(x = var.exp, y = est, color = significance, fill = var.resp)) + 
     geom_errorbar(aes(ymin = est.low, ymax = est.high),
                   width = 0) + 
-    geom_point(shape = 21, fill = "#2A9D8F") +
+    geom_point(shape = 21, size = 3) +
     xlab("") + ylab("Effect on resilience metric") +
     scale_color_manual(values = c(`no` = "gray", `yes` = "black")) +
+    scale_fill_manual(values = c("#9B2226", "#386641", "#33658A")) +
     geom_hline(yintercept = 0, linetype = "dashed") +
     facet_grid(. ~ var.resp, scales = "free") +
     theme(panel.background = element_rect(color = "black", fill = "white"), 
@@ -661,7 +763,7 @@ plot_FD_effect_vs_climate_quadra = function(
   response.vec = c("resilience", "resistance", "recovery")
   
   # Vector of explanatory variables that are not climate
-  vec.exp = c("R", "FD", "CWM")
+  vec.exp = c("H", "FD", "CWM")
   
   # Initialize data with the effect pvalue
   data.text = expand.grid(var.resp = response.vec, 
@@ -671,7 +773,7 @@ plot_FD_effect_vs_climate_quadra = function(
   # Data to fit the models for disturbance i
   data.in = cbind(data_model[, response.vec], 
                   scale((data_model %>% 
-                           dplyr::select("R" = R_metric, "FD", "CWM", "Clim" = "pca1")), 
+                           dplyr::select("H" = R_metric, "FD", "CWM", "Clim" = "pca1")), 
                         center = TRUE, scale = TRUE)) %>%
     # Convert strictly positive variables to log scale
     mutate(resilience = log(resilience), 
@@ -882,7 +984,7 @@ plot_FD_effect_vs_climate_quadra = function(
     newdata.clim.j = matrix(0, nrow = dim(data.clim)[1], ncol = length(beta.j), 
                             dimnames = list(c(), names(beta.j)))
     # -- Add response variable (set to 1) and write pvalue
-    newdata.clim.j[, "Clim"] = data.clim$pca1.scaled
+    if("Clim" %in% names(beta.j)) newdata.clim.j[, "Clim"] = data.clim$pca1.scaled
     if("Clim2" %in% names(beta.j)) newdata.clim.j[, "Clim2"] = data.clim$pca1.scaled.2
     newdata.clim.j[, "(Intercept)"] = 1
     pred.clim.j = newdata.clim.j %*% beta.j
@@ -925,11 +1027,20 @@ plot_FD_effect_vs_climate_quadra = function(
           panel.grid = element_blank(), 
           strip.background = element_blank())
   
+  # Categorize climates
+  data.clim = data.frame(pca1_min = quantile(data.ij$pca1, c(0:9)/10), 
+                         pca1_max = quantile(data.ij$pca1, c(1:10)/10)) %>%
+    mutate(clim = paste0("clim_", letters[c(1:dim(.)[1])])) %>%
+    merge(data.frame(pca1 = data.ij[, "pca1"])) %>%
+    filter(pca1 >= pca1_min & pca1 <= pca1_max) %>%
+    dplyr::select(pca1, clim)
+  
   # Add position on x and y axis for data.text
   data.text = data.text %>%
     mutate(pca1 = min(data.out$pca1) + 0.05*diff(range(data.out$pca1)), 
-           mean = max(data.out$mean) - 0.03*diff(range(data.out$mean))) %>%
-    mutate(effect = paste0(var.exp, " effect"))
+           mean = max(data.out$mean) + 0.14*diff(range(data.out$mean))) %>%
+    mutate(effect = paste0(var.exp, " effect")) %>%
+    mutate(clim = NA_character_)
   
   # Plot predicted vs observed
   plot.predictions = data.predict %>%
@@ -942,24 +1053,45 @@ plot_FD_effect_vs_climate_quadra = function(
           panel.grid = element_blank(), 
           strip.background = element_blank())
   
-  # Plot the estimates
-  plot.out = data.out %>%
+  # Re-format data.out
+  data.out = data.out %>%
     mutate(effect = gsub("\\_", " ", effect)) %>%
     mutate(var.resp = factor(var.resp, levels = c("resistance", "recovery", "resilience"))) %>%
-    ggplot(aes(x = pca1, y = mean, group = 1)) + 
-    geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, fill = "#2A9D8F", alpha = 0.5) +
+    left_join(data.clim, by = "pca1")
+  data.out = data.out  %>%
+    rbind.data.frame((
+      data.out %>%
+        # Keep one line per climate and effect
+        group_by(clim) %>% mutate(clim.min = min(pca1)) %>%
+        filter(pca1 == min(pca1)) %>%
+        # Remove one line per effect (min one)
+        ungroup() %>% group_by(effect, var.resp) %>%
+        mutate(effect.min = min(pca1)) %>% filter(pca1 != effect.min) %>%
+        ungroup() %>%
+        # Add new climate
+        left_join(data.frame(clim = paste0("clim_", letters[c(2:10)]), 
+                             clim2 = paste0("clim_", letters[c(1:9)])), 
+                  by = "clim") %>%
+        dplyr::select("pca1", "effect", "mean", "lwr", "upr", "var.resp", "clim" = "clim2")
+    ))
+  
+  # Plot the estimates
+  plot.out = data.out %>%
+    ggplot(aes(x = pca1, y = mean, group = clim, fill = clim)) + 
+    geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, alpha = 0.5) +
     geom_line(color = "#001524") + 
     xlab("Coordinate on the sgdd-wai PCA") + ylab("Effect on resilience metric") +
     facet_grid(effect ~ var.resp) +
     geom_hline(yintercept = 0, linetype = "dashed") +
     geom_text(aes(label = text), data = data.text, inherit.aes = TRUE, 
               hjust = "inward", size = 2.5, alpha = 0.8) +
+    scale_fill_manual(values = colorRampPalette(c("blue", "orange"))(10)) +
+    ylim(c(min(data.out$lwr), max(data.out$upr) + 0.2*diff(range(data.out$mean)))) +
     theme(panel.background = element_rect(color = "black", fill = "white"), 
           panel.grid = element_blank(), 
           strip.background = element_blank(), 
           strip.text = element_text(face = "bold"), 
-          legend.key = element_blank(), 
-          legend.title = element_blank())
+          legend.position = "none")
   
   # Name of the plot to save
   file.plot = paste0(dir.in, "/fd_effect_climate.jpg")
