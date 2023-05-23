@@ -719,7 +719,7 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", file.in){
     geom_errorbar(aes(ymin = est.low, ymax = est.high),
                   width = 0) + 
     geom_point(shape = 21, size = 3) +
-    xlab("") + ylab("Effect on resilience metric") +
+    xlab("") + ylab("Effect on response to\ndisturbance metric") +
     scale_color_manual(values = c(`no` = "gray", `yes` = "black")) +
     scale_fill_manual(values = c("#9B2226", "#386641", "#33658A")) +
     geom_hline(yintercept = 0, linetype = "dashed") +
@@ -1080,7 +1080,7 @@ plot_FD_effect_vs_climate_quadra = function(
     ggplot(aes(x = pca1, y = mean, group = clim, fill = clim)) + 
     geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, alpha = 0.5) +
     geom_line(color = "#001524") + 
-    xlab("Coordinate on the sgdd-wai PCA") + ylab("Effect on resilience metric") +
+    xlab("Coordinate on the sgdd-wai PCA") + ylab("Effect on response to\ndisturbance metric") +
     facet_grid(effect ~ var.resp) +
     geom_hline(yintercept = 0, linetype = "dashed") +
     geom_text(aes(label = text), data = data.text, inherit.aes = TRUE, 

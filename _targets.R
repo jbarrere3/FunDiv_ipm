@@ -120,29 +120,8 @@ list(
    sim_disturbance_storm, disturbance.df_storm, forest_list_storm)),
   # -- Format data together
   tar_target(data_model_storm_all, get_data_model(climate_storm, resilience_storm, FD_storm)),
-  
-  # Re-run simulations for populations that did not reach equil
-  # -- Make list of forest that did not reach equilibrium
-  tar_target(forest_list_storm_noneq, get_forest_list_noneq(
-    data_model_storm_all, forest_list_storm, sim_equilibrium_storm)),
-  # -- If od the forests that did not reach equilibrium
-  tar_target(ID.forest_storm_noneq, forest_list_storm_noneq$ID.forest),
-  # -- Re-run simulation till real equilibrium, and make simul with disturbance
-  tar_target(sim_disturbance_storm_noneq, make_simulations_disturbance_noneq(
-    climate_storm, harv_rules.ref, species_list_storm, forest_list_storm_noneq,
-    species_storm, sim_equilibrium_storm, ID.forest_storm_noneq, disturbance.df_storm),
-    pattern = map(ID.forest_storm_noneq), iteration = "vector", format = "file"),
-  # -- Extract results
-  tar_target(FD_storm_noneq, get_FD(
-    forest_list_storm_noneq, sim_disturbance_storm_noneq, pc1_per_species)),
-  tar_target(resilience_storm_noneq, get_resilience_metrics(
-    sim_disturbance_storm_noneq, disturbance.df_storm, forest_list_storm_noneq)),
-  tar_target(data_model_storm_noneq, get_data_model(
-    climate_storm, resilience_storm_noneq, FD_storm_noneq)),
-
-  # -- For the analyses, only keep simulations that reached equilibrium
-  tar_target(data_model_storm, rbind(subset(data_model_storm_all, SD < 0.15), 
-                                     subset(data_model_storm_noneq, SD < 0.15))),
+  # -- Only keep simulations that reached equilibrium
+  tar_target(data_model_storm, subset(data_model_storm_all, SD < 0.15)),
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

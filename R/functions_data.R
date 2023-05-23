@@ -482,7 +482,8 @@ get_resilience_metrics <- function(sim_disturbance, disturbance.df,
   out <- forest_list %>%
     dplyr::select(ID.forest, ID.climate, combination) %>%
     mutate(resistance = NA_real_, recovery = NA_real_, resilience = NA_real_, 
-           t0 = NA_real_, thalf = NA_real_, SD = NA_real_)
+           t0 = NA_real_, thalf = NA_real_, SD = NA_real_, BA_diff = NA_real_, 
+           BA_eq = NA_real_, dbh_mean = NA_real_)
   
   # Identify disturbance time
   tdist = min(disturbance.df$t)
@@ -499,6 +500,17 @@ get_resilience_metrics <- function(sim_disturbance, disturbance.df,
     # First, verify that equilibrium was reached
     if(!is.na(sim.i[1, 1])){
       
+      # mean dbh at equilibrium
+      out$dbh_mean[i] <- (sim.i %>%
+        filter(var == "n") %>%
+        filter(time == 1) %>%
+        group_by(size, time) %>%
+        summarize(ntot = sum(value)) %>%
+        ungroup() %>% group_by(time) %>%
+        filter(size > 0) %>%
+        mutate(ntot_size = ntot*size) %>%
+        summarize(mean_dbh = sum(ntot_size)/sum(ntot)))$mean_dbh
+      
       # Format the output
       data.i <- sim.i %>%
         filter(var == "BAsp") %>%
@@ -508,10 +520,12 @@ get_resilience_metrics <- function(sim_disturbance, disturbance.df,
       
       ## Calculate stability before disturbance (to check equilibrium)
       out$SD[i] = sd(subset(data.i, time %in% c(1:(tdist-1)))$BA)
+      out$BA_diff[i] = diff(range(subset(data.i, time %in% c(1:(tdist-1)))$BA))
       
       ## Calculate resistance
       #  - Basal area at equilibrium
       Beq.i = mean((data.i %>% filter(time < min(disturbance.df$t)))$BA)
+      out$BA_eq[i] = Beq.i
       # - Basal area after disturbance
       Bdist.i = (data.i %>% filter(time == max(disturbance.df$t)+1))$BA
       # - Resistance : logit of the percentage of basal area that survived 
@@ -572,7 +586,7 @@ get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
   # Initialize the original fd data
   data.fd.original <- forest_list %>%
     dplyr::select(ID.forest, ID.climate, combination) %>%
-    mutate(nsp = NA_real_, FD = NA_real_, H = NA_real_, D = NA_real_)
+    mutate(nsp = NA_real_, FD = NA_real_, H = NA_real_, D = NA_real_, Nha = NA_real_)
   
   # Loop on all species combination
   for(i in 1:length(sim_disturbance)){
@@ -588,6 +602,11 @@ get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
     
     # First, verify that equilibrium was reached
     if(!is.na(sim.i[1, 1])){
+      
+      ## - Calculate the number of trees per ha at equilibrium
+      data.fd.original$Nha[i] = sum((sim.i %>%
+                                       filter(var == "N") %>%
+                                       filter(time == 1))$value)
       
       ## - FD with the original approach
       data.fd.original.i <- sim.i %>%
@@ -664,8 +683,7 @@ get_FD <- function(forest_list, sim_disturbance, pc1_per_species){
     filter(!is.na(FRic))
   
   # Return output
-  return(out)
-}
+  return(out)}
 
 
 #' Format data for the models
