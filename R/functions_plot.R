@@ -1510,3 +1510,75 @@ plot_covariation_FD = function(
   return(file.in)
   
 }
+
+
+#' Plot the relation between tree diversity and tree density at equilibrium
+#' @param data_model dataset formatted for the analyses
+#' @param file.in Name of the file to save, including path
+plot_tree_packing = function(data_model, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Plot the relation between diversity and density
+  plot.out = data_model %>%
+    mutate(climate = paste0("clim", ID.climate)) %>%
+    mutate(climate = factor(
+      climate, levels = paste0("clim", c(1:length(unique(.$ID.climate)))))) %>%
+    ggplot(aes(x = H, y = Nha, fill = climate)) + 
+    geom_point(shape = 21, color = "black", alpha = 0.5) + 
+    scale_fill_manual(values = colorRampPalette(c("blue", "orange"))(10)) +
+    facet_wrap(~ climate, nrow = 2) + 
+    geom_smooth(method = "lm", color = "red", fill = NA) + 
+    theme(legend.position = "none", 
+          panel.grid = element_blank(), 
+          panel.background = element_rect(fill = "white", color = "black"), 
+          strip.background = element_blank())
+  
+  # Save the plot
+  ggsave(file.in, plot.out, width = 17, height = 8, 
+         units = "cm", dpi = 600, bg = "white")
+  
+  # Return the name of the file
+  return(file.in)
+}
+
+
+#' Plot the relation between climate, diversity and structure
+#' @param data_model dataset formatted for the analyses
+#' @param file.in Name of the file to save, including path
+plot_climate_vs_diversity_and_structure = function(data_model, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Make the plot
+  plot.out = data_model %>%
+    mutate(climate = paste0("clim", ID.climate)) %>%
+    mutate(climate = factor(
+      climate, levels = paste0("clim", c(1:length(unique(.$ID.climate)))))) %>%
+    dplyr::select(climate, H, FD, CWM, BA_diff, BA_eq, dbh_mean, Nha) %>%
+    drop_na() %>%
+    gather(key = "variable", value = "value", "H", "FD", "CWM", 
+           "BA_eq", "dbh_mean", "Nha") %>%
+    mutate(variable = factor(variable, levels = c(
+      "H", "FD", "CWM", "BA_eq", "dbh_mean", "Nha"))) %>%
+    ggplot(aes(x = climate, y = value, fill = climate)) + 
+    geom_boxplot(alpha = 0.7) + 
+    scale_fill_manual(values = colorRampPalette(c("blue", "orange"))(10)) +
+    facet_wrap(~ variable, scales = "free") + 
+    theme(legend.position = "none", 
+          panel.grid = element_blank(), 
+          panel.background = element_rect(fill = "white", color = "black"), 
+          strip.background = element_blank(), 
+          axis.text.x = element_text(angle = 60, hjust = 1), 
+          axis.title = element_blank()) 
+  
+  
+  # Save the plot
+  ggsave(file.in, plot.out, width = 17, height = 12, 
+         units = "cm", dpi = 600, bg = "white")
+  
+  # Return the name of the file
+  return(file.in)
+}

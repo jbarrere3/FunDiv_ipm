@@ -260,7 +260,21 @@ list(
   # Functional density distribution of random vs selected communities
   tar_target(fig_pca1_selection_vs_random_storm, plot_pca1_selection_vs_random(
    climate_storm, pc1_per_species, 
-   "output/fig_exploratory/fig_pca1_selection_vs_random_storm.jpg"), format = "file")
+   "output/fig_exploratory/fig_pca1_selection_vs_random_storm.jpg"), format = "file"), 
+  
+  # Relation between diversity and density of trees
+  tar_target(fig_tree_packing, plot_tree_packing(
+    data_model_storm, "output/fig_exploratory/fig_treepacking.jpg"), format = "file"), 
+  
+  # Relation between climate, diversity and structure
+  tar_target(fig_climate_diversity_structure, plot_climate_vs_diversity_and_structure(
+    data_model_storm, "output/fig_exploratory/fig_climate_vs_diversity_and_structure.jpg"), 
+    format = "file"), 
+  tar_target(fig_climate_diversity_structure_monosp, plot_climate_vs_diversity_and_structure(
+    subset(data_model_storm, nsp == 1), 
+    "output/fig_exploratory/fig_climate_vs_diversity_and_structure_monosp.jpg"), 
+    format = "file")
+  
   
   
   
