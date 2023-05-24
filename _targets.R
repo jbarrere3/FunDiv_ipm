@@ -124,56 +124,6 @@ list(
   tar_target(data_model_storm, subset(data_model_storm_all, SD < 0.15)),
   
   
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Make simulations with storm disturbances and random selection -----
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  
-  # # -- generate one climate object per iteration with branching
-  # tar_target(climate_storm_random, make_climate(
-  #   FUNDIV_climate_species, quantiles.in = climate_list_storm[[ID.climate_storm]], 
-  #   "storm", 10, exclude.in = c("Carpinus_betulus", "Quercus_ilex"), 
-  #   method = "random"), pattern = map(ID.climate_storm), iteration = "list"), 
-  # 
-  # # Make species objects
-  # # -- First: list all species object to make
-  # tar_target(species_list_storm_random, make_species_list(climate_storm_random, "storm_random")),
-  # # -- Make a vector of ID for each species to make
-  # tar_target(ID.species_storm_random, species_list_storm_random$ID.species), 
-  # # -- Make the species via branching over ID.species
-  # tar_target(species_storm_random, make_species_rds(
-  #   fit.list.allspecies, climate_storm_random, species_list_storm_random, 
-  #   ID.species.in = ID.species_storm_random), 
-  #   pattern = map(ID.species_storm_random), iteration = "vector", format = "file"),
-  # 
-  # # Make simulations 
-  # # -- Start with a list of forest to simulate
-  # tar_target(forest_list_storm_random, make_forest_list(climate_storm_random, "storm_random")), 
-  # # -- Make a vector of ID for each forest to simulate
-  # tar_target(ID.forest_storm_random, forest_list_storm_random$ID.forest),
-  # # -- Make simulations till equilibrium
-  # tar_target(sim_equilibrium_storm_random, make_simulations_equilibrium(
-  #   climate_storm_random, harv_rules.ref, species_list_storm_random, 
-  #   forest_list_storm_random, species_storm_random, ID.forest_storm_random), 
-  #   pattern = map(ID.forest_storm_random), iteration = "vector", format = "file"),
-  # # -- Make simulations with disturbance
-  # tar_target(sim_disturbance_storm_random, make_simulations_disturbance(
-  #   climate_storm_random, harv_rules.ref, species_list_storm_random, 
-  #   forest_list_storm_random, species_storm_random, sim_equilibrium_storm_random, 
-  #   ID.forest.in = ID.forest_storm_random, disturbance.df_storm), 
-  #   pattern = map(ID.forest_storm_random), iteration = "vector", format = "file"),
-  # 
-  # # Extract results
-  # # -- Get functional diversity
-  # tar_target(FD_storm_random, get_FD(
-  #   forest_list_storm_random, sim_disturbance_storm_random, pc1_per_species)),
-  # # -- Get resilience metrics
-  # tar_target(resilience_storm_random, get_resilience_metrics(
-  #   sim_disturbance_storm_random, disturbance.df_storm, forest_list_storm_random)),
-  # # -- Format data together
-  # tar_target(data_model_storm_random, get_data_model(
-  #   climate_storm_random, resilience_storm_random, FD_storm_random)),
-  # 
-  
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Traits -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -191,26 +141,22 @@ list(
   
    
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Informative plots -----
+  # -- Plots for the methods of the paper -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
    
   # Map of the different climates used for the analysis
   tar_target(fig_map_climates, map_climates(
    FUNDIV_climate_species, climate.in = climate_list_storm, 
-   "output/fig_informative/map_climates.jpg"), format = "file"), 
+   "output/fig_methods/map_climates.jpg"), format = "file"), 
   
   # Plot the pca with species traits
   tar_target(fig_traits_pca, plot_traits_pca(
-    traits, get_species_sim(climate_storm), "output/fig_informative/traits.jpg"), 
+    traits, get_species_sim(climate_storm), "output/fig_methods/traits.jpg"), 
     format = "file"),
   
   # Plot of the resilience metrics
   tar_target(fig_metrics, plot_metrics(
-    sim_disturbance_storm[4], "output/fig_informative/metrics.jpg"), format = "file"),
-  tar_target(fig_metrics_60, plot_metrics(
-    sim_disturbance_storm[60], "output/fig_informative/metrics_60.jpg"), format = "file"),
-  tar_target(fig_metrics_51, plot_metrics(
-    sim_disturbance_storm[14], "output/fig_informative/metrics_51.jpg"), format = "file"),
+    sim_disturbance_storm[35], "output/fig_methods/metrics.jpg"), format = "file"),
   
   
   
@@ -221,58 +167,36 @@ list(
   
   # Plot the effect of FD on resilience
   tar_target(fig_FD_effect_resilience, plot_FD_effect_resilience(
-    data_model_storm, "H", "output/fig_analyses/fig_FD_effect_resilience_storm.jpg"), 
+    data_model_storm, "H", "output/analyses_H1"), 
     format = "file"),
   
   
   # Plot how the FD effect changes with climate
   tar_target(fig_FD_effect_vs_climate_quadra, plot_FD_effect_vs_climate_quadra(
-    data_model_storm, "H", "pvalue", "output/fig_analyses"), format = "file"),
+    data_model_storm, "H", "pvalue", "output/analyses_H2"), format = "file"),
   
   
   # Make a network analysis with peacewise SEM
   tar_target(fig_sem_storm, plot_sem(
-    data_model_storm, "FD", "H", "recovery", "output/fig_analyses/sem_storm.jpg"), 
+    data_model_storm, "FD", "H", "recovery", "output/analyses_H3"), 
     format = "file"), 
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Exploratory plots -----
+  # -- Plots for supplementary -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
    
-  # changes in FW and CWM over time
-  tar_target(fig_cwm_and_fd_overtime_storm, plot_cwm_fd_overtime(
-   sim_equilibrium_storm, forest_list_storm, pc1_per_species, 
-   "output/fig_exploratory/cwm_and_fd_over_time_storm.jpg"), format = "file"), 
-
-  # Proportion of species with sensitivity estimation per climate
-  tar_target(fig_prop.species_per_climate, plot_prop.species_per_climate(
-    FUNDIV_climate_species, "storm", "output/fig_exploratory/fig_prop_per_clim_storm.jpg"), 
-    format = "file"), 
-  
   # Co-variation between resilience metrics
-  tar_target(fig_covariation_FD_storm, plot_covariation_FD(
-    data_model_storm, c("FD", "FRic", "FDis", "CWM", "nsp", "H", "D"), 
-    "output/fig_exploratory/fig_covar_FD_storm.jpg"), format = "file"),
-  tar_target(fig_covariation_res_storm, plot_covariation_FD(
-    data_model_storm, c("t0", "thalf", "resistance", "recovery", "resilience"), 
-    "output/fig_exploratory/fig_covar_res_storm.jpg"), format = "file"),
-  
-  # Functional density distribution of random vs selected communities
-  tar_target(fig_pca1_selection_vs_random_storm, plot_pca1_selection_vs_random(
-   climate_storm, pc1_per_species, 
-   "output/fig_exploratory/fig_pca1_selection_vs_random_storm.jpg"), format = "file"), 
+  tar_target(fig_covariation_FD_storm, plot_covariation(
+    data_model_storm, c("FD", "H", "CWM", "resistance", "recovery", "resilience"), 
+    "output/supplementary/fig_covar_storm.png"), format = "file"),
   
   # Relation between diversity and density of trees
   tar_target(fig_tree_packing, plot_tree_packing(
-    data_model_storm, "output/fig_exploratory/fig_treepacking.jpg"), format = "file"), 
+    data_model_storm, "output/supplementary/fig_treepacking.jpg"), format = "file"), 
   
   # Relation between climate, diversity and structure
   tar_target(fig_climate_diversity_structure, plot_climate_vs_diversity_and_structure(
-    data_model_storm, "output/fig_exploratory/fig_climate_vs_diversity_and_structure.jpg"), 
-    format = "file"), 
-  tar_target(fig_climate_diversity_structure_monosp, plot_climate_vs_diversity_and_structure(
-    subset(data_model_storm, nsp == 1), 
-    "output/fig_exploratory/fig_climate_vs_diversity_and_structure_monosp.jpg"), 
+    data_model_storm, "output/supplementary/fig_climate_vs_diversity_and_structure.jpg"), 
     format = "file")
   
   
