@@ -24,7 +24,7 @@ lapply(grep("R$", list.files("R"), value = TRUE), function(x) source(file.path("
 packages.in <- c("dplyr", "ggplot2", "matreex", "tidyr", "data.table", 
                  "factoextra", "modi", "sf", "rnaturalearth", "scales", 
                  "cowplot", "multcomp", "piecewiseSEM", "future", "FD", "GGally", 
-                 "statmod")
+                 "statmod", "xtable")
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
@@ -156,7 +156,7 @@ list(
   
   # Plot of the resilience metrics
   tar_target(fig_metrics, plot_metrics(
-    sim_disturbance_storm[35], "output/fig_methods/metrics.jpg"), format = "file"),
+    sim_disturbance_storm[64], "output/fig_methods/metrics.jpg"), format = "file"),
   
   
   

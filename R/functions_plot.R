@@ -470,6 +470,7 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
   
   # File for the figure
   fig.file.in = paste0(dir.in, "/sem_storm.jpg")
+  table.file.in = paste0(dir.in, "/stat_sem.tex")
   
   # Create directory if needed
   create_dir_if_needed(fig.file.in)
@@ -540,6 +541,7 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
       var.resp = as.character(summary(mod_sem[[i]])$terms[[2]]), 
       var.exp = as.character(rownames(summary(mod_sem[[i]])$coefficients)[-1]), 
       est = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 1]), 
+      se = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 2]), 
       p = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 4]), 
       class = ifelse("glm" %in% class(mod_sem[[i]]), "glm", "lm")
     ) %>%
@@ -589,6 +591,23 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
              TRUE ~ "high"
            )) 
   
+  # Statistics table
+  # -- Make the table
+  table.stat = data.frame(
+    col1 = c("Resp. var", data.plot.arrow$var.resp),
+    col2 = c("Exp. var", data.plot.arrow$var.exp),
+    col3 = c("Est", round(data.plot.arrow$est, digits = 2)),
+    col4 = c("se", round(data.plot.arrow$se, digits = 2)),
+    col5 = c("p", scales::pvalue(data.plot.arrow$p))
+  )
+  # -- Export the table
+  print(xtable(table.stat, type = "latex", 
+               caption = "Estimate, standard error and pvalue of the models included in the structural equation model", 
+               label = "table_stat_sem"), 
+        include.rownames=FALSE, hline.after = c(0, 1, dim(table.stat)[1]), 
+        include.colnames = FALSE, caption.placement = "top", 
+        file = table.file.in)
+
   # Add stat to the plot box data
   data.plot.box = data.plot.box %>%
     left_join((data.plot.arrow %>% 
@@ -675,8 +694,10 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
 #' @param dir.in Name of the directory where to save files
 plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
   
-  # Name of the figure file
+  # Name of the files
   fig.file.in = paste0(dir.in, "/fig_FD_effect_resilience_storm.jpg")
+  fig.file.predictions = paste0(dir.in, "/observed_vs_predicted_H1.jpg")
+  table.file.stats = paste0(dir.in, "/stats_H1.tex")
   
   # create output directory if it doesn't exist
   create_dir_if_needed(fig.file.in)
@@ -693,6 +714,9 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
     mutate(resilience = log(resilience), 
            recovery = log(recovery))
   
+  # Initialize the table with statistics
+  table.stats = data.frame(col1 = "", col2 = "Est", col3 = "se", col4 = "F", col5 = "p")
+  
   # Loop on all response variables
   for(j in 1:length(response.vec)){
     
@@ -700,6 +724,14 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
     eval(parse(text = paste0(
       "model.j = lm(", response.vec[j], " ~ H + FD + CWM, data = data.in)"
     )))
+    
+    # Data for predictions
+    data.predict.j = data.in %>%
+      mutate(predicted = predict(model.j, newdata = .)) %>%
+      rename("observed" = response.vec[j]) %>%
+      mutate(response.var = response.vec[j]) %>%
+      dplyr::select(response.var, predicted, observed)
+    
     
     # Output data set for model i j 
     data.out.j = data.frame(
@@ -711,11 +743,38 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
       est.high = as.numeric(confint(model.j)[-1, 2])
     )
     
+    # Complete the statistics table
+    table.stats = table.stats %>%
+      rbind(data.frame(
+        col1 = c("", response.vec[j], data.out.j$var.exp), 
+        col2 = c("", "(R2: ", round(as.numeric(coef(model.j)[-1]), digits = 2)), 
+        col3 = c("", paste0(round(summary(model.j)$r.squared, digits = 2), ")"), 
+                 round(summary(model.j)$coefficients[-1, 2], digits = 2)), 
+        col4 = c("", "", round(anova(model.j)[-dim(anova(model.j))[1], 4], digits = 2)), 
+        col5 = c("", "", scales::pvalue(anova(model.j)[-dim(anova(model.j))[1], 5]))
+      ))
+    
     # Add to the final output dataset
-    if(j == 1) data.out = data.out.j
-    else data.out = rbind(data.out, data.out.j)
+    if(j == 1){
+      data.out = data.out.j
+      data.predict = data.predict.j
+    } else {
+      data.out = rbind(data.out, data.out.j)
+      data.predict = rbind(data.predict, data.predict.j)
+    } 
   }
   
+  
+  # Plot predicted vs observed
+  plot.predictions = data.predict %>%
+    ggplot(aes(x = observed, y = predicted)) + 
+    geom_point(shape = 21, color = "black", fill = "grey", alpha = 0.5) + 
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") + 
+    facet_wrap(~ response.var, scales = "free") + 
+    xlab("Observed value") + ylab("Predicted value") + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank())
   
   # Plot the estimates
   plot.out = data.out %>%
@@ -740,9 +799,20 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
   # Save plot 
   ggsave(fig.file.in, plot.out, width = 13, height = 5, units = "cm", 
          dpi = 600, bg = "white")
+  ggsave(fig.file.predictions, plot.predictions, width = 14, height = 5, 
+         units = "cm", dpi = 600, bg = "white")
+  
+  # Save tex file
+  print(xtable(table.stats, type = "latex", 
+               caption = "Statistics of the models used to test the effect of species composition on forest response to disturbances (H1)", 
+               label = "table_stat_H1"), 
+        include.rownames=FALSE, hline.after = c(0, 1, dim(table.stats)[1]), 
+        include.colnames = FALSE, caption.placement = "top", 
+        file = table.file.stats)
+  
   
   # Return name of the file saved
-  return(c(fig.file.in))
+  return(c(fig.file.in, fig.file.predictions, table.file.stats))
   
 }
 
@@ -850,6 +920,8 @@ plot_FD_effect_vs_climate_quadra = function(
     # Initialize vector for the final formula of model j
     formula.model.j = c()
     
+    # Name of the stat tables to export 
+    files.stat.table = paste0(dir.in, "/stat_H2_", response.vec, ".tex")
     
     # First loop on all explanatory variables to remove non significant interactions
     for(i1 in 1:length(vec.exp)){
@@ -918,6 +990,26 @@ plot_FD_effect_vs_climate_quadra = function(
     # Run final model for response variable j
     eval(parse(text = paste0("model.j = lm(", response.vec[j], " ~ ", 
                              formula.model.j, formula.end.j)))
+    
+    ## Export stats of the model
+    # -- Create table
+    table.stat.j = data.frame(
+      col1 = c("", names(coef(model.j)[-1])), 
+      col2 = c("Est", round(as.numeric(coef(model.j)[-1]), digits = 2)), 
+      col3 = c("se", round(summary(model.j)$coefficients[-1, 2], digits = 2)), 
+      col4 = c("F", round(anova(model.j)[-dim(anova(model.j))[1], 4], digits = 2)), 
+      col5 = c("p", scales::pvalue(anova(model.j)[-dim(anova(model.j))[1], 5]))
+    )
+    # -- Export the table
+    print(xtable(table.stat.j, type = "latex", 
+                 caption = paste0("Statistics of the models used to test the ", 
+                                  "effect of climate 
+                                  and species composition on ", 
+                                  response.vec[j], " (H2)"), 
+                 label = paste0("table_stat_H1_", response.vec[j])), 
+          include.rownames=FALSE, hline.after = c(0, 1, dim(table.stat.j)[1]), 
+          include.colnames = FALSE, caption.placement = "top", 
+          file = files.stat.table[j])
     
     # Coefficients of the model
     beta.j = coef(model.j)
@@ -1113,7 +1205,7 @@ plot_FD_effect_vs_climate_quadra = function(
          units = "cm", dpi = 600, bg = "white")
   
   # Return name of the file saved
-  return(c(file.plot, file.plot.predictions, file.plot.fitclim))
+  return(c(file.plot, file.plot.predictions, file.plot.fitclim, files.stat.table))
   
 }
 
