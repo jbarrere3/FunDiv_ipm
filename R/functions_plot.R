@@ -1250,7 +1250,7 @@ plot_FD_effect_vs_climate_quadra = function(
 
   
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-# -- Exploratory plots -----
+# -- Plots for supplementary -----
 #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 
@@ -1347,4 +1347,248 @@ plot_climate_vs_diversity_and_structure = function(data_model, file.in){
   
   # Return the name of the file
   return(file.in)
+}
+
+
+#' Analyse the data with a structural equation model approach
+#' @param data_model formatted model output
+#' @param FD_metric Functional diversity metric to choose ("FDis", "FRic or "FD")
+#' @param recovery_metric Recovery metric to choose ("recovery", "thalf)
+#' @param R_metric Richness metric to choose ("nsp", "H" or "D")
+#' @param dir.in name of the directory where to save outputs
+plot_sem_supp = function(data_model, FD_metric = "FD", R_metric = "H", 
+                         recovery_metric = "recovery", dir.in){
+  
+  # File for the figure
+  fig.file.in = paste0(dir.in, "/sem_storm_supp.jpg")
+  table.file.in = paste0(dir.in, "/stat_sem_supp.tex")
+  
+  # Create directory if needed
+  create_dir_if_needed(fig.file.in)
+  
+  # -- Start by formatting data before fitting the model
+  data.in = data_model %>%
+    # Choose the right recovery metric
+    rename("recov" = recovery_metric) %>%
+    # Log transform resilience metrics to fit normality assumption
+    mutate(resistance.log = resistance, 
+           recovery.log = log(recov), 
+           resilience.log = log(resilience)) %>%
+    # Select the right FD metric
+    rename("FD_chosen" = FD_metric, "R_chosen" = R_metric) %>%
+    # scale all variables used in models
+    mutate(climate_scaled = as.numeric(scale(pca1, center = TRUE, scale = TRUE)), 
+           FD_scaled = as.numeric(scale(FD_chosen, center = FALSE, scale = TRUE)), 
+           CWM_scaled = as.numeric(scale(CWM, center = TRUE, scale = TRUE)), 
+           H_scaled = as.numeric(scale(R_chosen, center = FALSE, scale = TRUE)),
+           resistance.log_scaled = as.numeric(scale(resistance.log, center = TRUE, scale = TRUE)), 
+           recovery.log_scaled = as.numeric(scale(recovery.log, center = TRUE, scale = TRUE)), 
+           resilience.log_scaled = as.numeric(scale(resilience.log, center = TRUE, scale = TRUE)))
+  
+  
+  # -- Make model
+  mod_sem = psem(
+    glm(FD_scaled ~ climate_scaled + H_scaled, family = tweedie(var.power = 2), 
+        data = data.in), 
+    glm(H_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
+        data = data.in), 
+    lm(CWM_scaled ~ climate_scaled + FD_scaled + H_scaled, data = data.in), 
+    lm(resistance.log_scaled ~ FD_scaled + CWM_scaled + H_scaled + climate_scaled, 
+       data = data.in), 
+    lm(recovery.log_scaled ~ FD_scaled + CWM_scaled + climate_scaled + H_scaled + resistance.log_scaled, 
+       data = data.in), 
+    lm(resilience.log_scaled ~ resistance.log_scaled + recovery.log_scaled + 
+         FD_scaled + CWM_scaled + climate_scaled + H_scaled, data = data.in)
+  )
+  
+  
+  # Plot the results
+  
+  # -- Prepare some parameters about the box to drax
+  box.height = 2
+  box.width = 4
+  box.height.spacing = 2
+  
+  # -- Make a dataset to plot the box with the text
+  data.plot.box = data.frame(
+    text = c("climate", "FD", "CWM", R_metric, "recovery", "resistance", "resilience"), 
+    center.x = c(0, -7, 4.5, -13, 2, -7, -1), 
+    height.level = c(4, 3, 3, 3, 2, 2, 1)) %>%
+    mutate(ymin = (height.level - 0.5*box.height)*(box.height + box.height.spacing), 
+           ymax = ymin + box.height,
+           xmin = center.x - box.width/2, 
+           xmax = center.x + box.width/2,
+           center.y = 0.5*(ymin + ymax))
+  
+  
+  # Loop on all models to extract output
+  for(i in 1:(length(names(mod_sem)) - 1)){
+    
+    # model output for model i
+    data.plot.arrow.i = data.frame(
+      var.resp = as.character(summary(mod_sem[[i]])$terms[[2]]), 
+      var.exp = as.character(rownames(summary(mod_sem[[i]])$coefficients)[-1]), 
+      est = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 1]), 
+      se = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 2]), 
+      p = as.numeric(summary(mod_sem[[i]])$coefficients[-1, 4]), 
+      class = ifelse("glm" %in% class(mod_sem[[i]]), "glm", "lm")
+    ) %>%
+      mutate(R2 = ifelse(
+        class == "glm", 
+        with(summary(mod_sem[[i]]), 1 - deviance/null.deviance), 
+        summary(mod_sem[[i]])$r.squared))
+    # Add to final output
+    if(i == 1) data.plot.arrow = data.plot.arrow.i
+    else data.plot.arrow = rbind(data.plot.arrow, data.plot.arrow.i)
+  }
+  
+  # -- Prepare model outputs for plotting
+  data.plot.arrow = data.plot.arrow %>%
+    # simplify the name of variables
+    mutate(var.exp = gsub("\\..+", "", gsub("\\_.+", "", var.exp)), 
+           var.resp = gsub("\\..+", "", gsub("\\_.+", "", var.resp))) %>%
+    # Add plot information on the resp variable
+    left_join((data.plot.box %>%
+                 dplyr::select(var.resp = text, level.resp = height.level, 
+                               center.x.resp = center.x, center.y.resp = center.y)), 
+              by = "var.resp") %>%
+    # Add plot information on the exp variable
+    left_join((data.plot.box %>%
+                 dplyr::select(var.exp = text, level.exp = height.level, 
+                               center.x.exp = center.x, center.y.exp = center.y)), 
+              by = "var.exp") %>%
+    # Add start and end of each arrow
+    mutate(
+      arrow.beg.y = ifelse((var.exp %in% c(R_metric, "CWM") & var.resp == "resilience"),
+                           center.y.resp, (center.y.exp - 0.5*box.height)), 
+      arrow.beg.x = center.x.exp, 
+      arrow.end.y = ifelse((var.exp %in% c(R_metric, "CWM") & var.resp == "resilience"),
+                           center.y.resp, (center.y.resp + 0.5*box.height)), 
+      arrow.end.x = case_when(
+        (var.exp == R_metric & var.resp == "resilience") ~ (center.x.resp - 0.5*box.width), 
+        (var.exp == "CWM" & var.resp == "resilience") ~ (center.x.resp + 0.5*box.width),
+        TRUE ~ center.x.resp)) %>%
+    # Modify arrow when same level
+    # mutate(
+    #   arrow.end.x = case_when(
+    #     (center.y.resp == center.y.exp & center.x.resp < center.x.exp) ~ (center.x.resp + 0.5*box.width), 
+    #     (center.y.resp == center.y.exp & center.x.resp > center.x.exp) ~ (center.x.resp - 0.5*box.width), 
+    #     TRUE ~ arrow.end.x), 
+    #   arrow.beg.x = case_when(
+    #     (center.y.resp == center.y.exp & center.x.resp < center.x.exp) ~ (center.x.exp - 0.5*box.width), 
+    #     (center.y.resp == center.y.exp & center.x.resp > center.x.exp) ~ (center.x.exp + 0.5*box.width), 
+    #     TRUE ~ arrow.beg.x), 
+    #   arrow.beg.y = ifelse(center.y.resp == center.y.exp, center.y.resp, arrow.beg.y), 
+  #   arrow.end.y = ifelse(center.y.resp == center.y.exp, center.y.resp, arrow.end.y)) %>%
+  # # Report significance, sign and absolute value of estimate
+  mutate(signif = ifelse(p <= 0.05, "yes", "no"), 
+         sign = ifelse(est < 0, "negative", "positive"), 
+         est.abs = abs(est), 
+         magnitude = case_when(
+           est.abs <= quantile(est.abs, 0.33) ~ "low", 
+           est.abs > quantile(est.abs, 0.33) & 
+             est.abs <= quantile(est.abs, 0.66) ~ "mid", 
+           TRUE ~ "high"
+         )) 
+  
+  # Statistics table
+  # -- Make the table
+  table.stat = data.frame(
+    col1 = c("Resp. var", data.plot.arrow$var.resp),
+    col2 = c("Exp. var", data.plot.arrow$var.exp),
+    col3 = c("Est", round(data.plot.arrow$est, digits = 2)),
+    col4 = c("se", round(data.plot.arrow$se, digits = 2)),
+    col5 = c("p", scales::pvalue(data.plot.arrow$p))
+  )
+  # -- Export the table
+  print(xtable(table.stat, type = "latex", 
+               caption = "Estimate, standard error and pvalue of the models included in the structural equation model", 
+               label = "table_stat_sem_supp"), 
+        include.rownames=FALSE, hline.after = c(0, 1, dim(table.stat)[1]), 
+        include.colnames = FALSE, caption.placement = "top", 
+        file = table.file.in)
+  
+  # Add stat to the plot box data
+  data.plot.box = data.plot.box %>%
+    left_join((data.plot.arrow %>% 
+                 dplyr::select(text = var.resp, class, R2) %>% 
+                 mutate(R2 = round(R2, digits = 3)) %>% 
+                 distinct() %>% 
+                 mutate(text_stat = paste0(text, "\n", "R2 = ", R2))), 
+              by = "text") %>%
+    mutate(text_stat = ifelse(is.na(text_stat), text, text_stat))
+  
+  # Add rectangles
+  data.box.cat = data.plot.box %>%
+    mutate(cat = case_when(
+      text == "climate" ~ "Climate", 
+      text %in% c(R_metric, "FD", "CWM") ~ "Species\ncomposition", 
+      text %in% c("resistance", "recovery", "resilience") ~ "Resilience"
+    )) %>%
+    group_by(cat) %>%
+    summarise(xmin = min(xmin) - 0.05*diff(range(data.plot.box$center.x)), 
+              xmax = max(xmax) + 0.05*diff(range(data.plot.box$center.x)), 
+              ymin = min(ymin) - 0.05*diff(range(data.plot.box$center.y)), 
+              ymax = max(ymax) + 0.05*diff(range(data.plot.box$center.y))) %>%
+    mutate(center.x = xmax + 0.02*diff(range(data.plot.box$center.y)), 
+           center.y = (ymin+ymax)/2)
+  
+  # -- Adjust data plot arrow to remove relations that are not of interest
+  data.plot.arrow <- data.plot.arrow %>%
+    filter(!(var.resp == "FD" & var.exp == "H")) %>%
+    filter(!(var.resp == "CWM" & var.exp == "H")) %>%
+    filter(!(var.resp == "CWM" & var.exp == "FD")) %>%
+    filter(!(var.resp == "recovery" & var.exp == "resistance")) %>%
+    filter(!(var.resp == "resistance" & var.exp == "climate")) 
+  
+  # -- Plot the boxes
+  plot.box = data.plot.box %>%
+    ggplot(aes(x = center.x, y = center.y))  + 
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = cat),
+              data = data.box.cat,  color = "black", inherit.aes = TRUE, 
+              show.legend = FALSE, alpha = 0.5)+ 
+    geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
+              color = "black", fill = "#415A77", alpha = 0.7)+ 
+    geom_text(aes(label = text_stat), color = "white", size = 4) + 
+    geom_text(aes(label = cat), data = data.box.cat,
+              hjust = 0, size = 4, inherit.aes = TRUE) +
+    scale_fill_manual(values = c("#FF6F59", "#7678ED", "#43AA8B")) +
+    xlim(min(data.box.cat$xmin) - 0.05*diff(range(data.plot.box$center.x)), 
+         max(data.box.cat$center.x) + 0.3*diff(range(data.plot.box$center.x))) +
+    theme(axis.title = element_blank(), 
+          axis.ticks = element_blank(), 
+          axis.text = element_blank(), 
+          panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          legend.key = element_blank())
+  
+  
+  
+  
+  # -- plot the box with arrows
+  plot.out = plot.box + 
+    # Vertical segment
+    geom_segment(data = subset(data.plot.arrow, var.exp %in% c(R_metric, "CWM") & 
+                                 var.resp == "resilience"), 
+                 aes(x = center.x.exp, xend = center.x.exp, 
+                     y = center.y.exp - 0.5*box.height, yend = center.y.resp, 
+                     size = magnitude, linetype = signif, color = sign)) + 
+    # Arrows
+    geom_segment(data = data.plot.arrow, 
+                 aes(x = arrow.beg.x, xend = arrow.end.x, 
+                     y = arrow.beg.y, yend = arrow.end.y, 
+                     size = magnitude, linetype = signif, color = sign), 
+                 arrow = arrow(length = unit(0.15, "cm")), 
+                 type = "closed") + 
+    # -- scale linetype, color and size
+    scale_color_manual(values = c(`negative` = "#0081A7", `positive` = "#F07167")) + 
+    scale_linetype_manual(values = c(`yes` = "solid", `no` = "dashed")) + 
+    scale_size_manual(values = c(`low` = 0.3, `mid` = 0.6, `high` = 1.1))
+  
+  
+  # - Save the plot
+  ggsave(fig.file.in, plot.out, width = 20, height = 12, units = "cm", dpi = 600, bg = "white")
+  
+  # return the name of all the plots made
+  return(c(fig.file.in))
 }

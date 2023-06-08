@@ -197,7 +197,11 @@ list(
   # Relation between climate, diversity and structure
   tar_target(fig_climate_diversity_structure, plot_climate_vs_diversity_and_structure(
     data_model_storm, "output/supplementary/fig_climate_vs_diversity_and_structure.jpg"), 
-    format = "file")
+    format = "file"), 
+  
+  # SEM with additional relations
+  tar_target(fig_sem_supp, plot_sem_supp(
+    data_model_storm, dir.in = "output/supplementary"), format = "file")
   
   
   
