@@ -24,7 +24,7 @@ lapply(grep("R$", list.files("R"), value = TRUE), function(x) source(file.path("
 packages.in <- c("dplyr", "ggplot2", "matreex", "tidyr", "data.table", 
                  "factoextra", "modi", "sf", "rnaturalearth", "scales", 
                  "cowplot", "multcomp", "piecewiseSEM", "future", "FD", "GGally", 
-                 "statmod", "xtable")
+                 "statmod", "xtable", "car")
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
@@ -121,7 +121,7 @@ list(
   # -- Format data together
   tar_target(data_model_storm_all, get_data_model(climate_storm, resilience_storm, FD_storm)),
   # -- Only keep simulations that reached equilibrium
-  tar_target(data_model_storm, subset(data_model_storm_all, SD < 0.15)),
+  tar_target(data_model_storm, subset(data_model_storm_all, (SD < 0.15 & ID.forest != 480))),
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -167,13 +167,13 @@ list(
   
   # Plot the effect of FD on resilience
   tar_target(fig_FD_effect_resilience, plot_FD_effect_resilience(
-    data_model_storm, "H", "output/analyses_H1"), 
+    data_model_storm, "output/analyses_H1"), 
     format = "file"),
   
   
   # Plot how the FD effect changes with climate
   tar_target(fig_FD_effect_vs_climate_quadra, plot_FD_effect_vs_climate_quadra(
-    data_model_storm, "H", "pvalue", "output/analyses_H2"), format = "file"),
+    data_model_storm, "H", "AIC", "output/analyses_H2"), format = "file"),
   
   
   # Make a network analysis with peacewise SEM
@@ -198,9 +198,6 @@ list(
   tar_target(fig_climate_diversity_structure, plot_climate_vs_diversity_and_structure(
     data_model_storm, "output/supplementary/fig_climate_vs_diversity_and_structure.jpg"), 
     format = "file")
-  
-  
-  
   
   
   

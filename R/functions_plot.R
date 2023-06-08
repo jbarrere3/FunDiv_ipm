@@ -408,9 +408,9 @@ plot_metrics = function(sim_disturbance_file, file.in){
     # RESISTANCE
     annotate('text', x = 100, y = BAeq.i + 0.25*BA.span, parse = TRUE, size=5, hjust = 0,
              label = "Resistance==frac(BA[dist],BA[eq])", color = resistance.color) + 
-    annotate('text', x = 10, y = BAeq.i+1, size=5, hjust = 0, color = resistance.color,
+    annotate('text', x = 10, y = BAeq.i+0.08*BA.span, size=5, hjust = 0, color = resistance.color,
              label = "BA[eq]", parse = TRUE) +
-    annotate('text', x = 10, y = BAdist.i+1, size=5, hjust = 0, color = resistance.color,
+    annotate('text', x = 10, y = BAdist.i+0.08*BA.span, size=5, hjust = 0, color = resistance.color,
              label = "BA[dist]", parse = TRUE) +
     geom_segment(x=0, xend=Tdist, y=BAdist.i, yend=BAdist.i, 
                  color = resistance.color, linetype = "dashed") +
@@ -690,13 +690,13 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
 
 #' Function to estimate of FD metrics on resilience
 #' @param data_model df formatted to fit model
-#' @param R_metric Richness metric to choose ("nsp", "H" or "D")
 #' @param dir.in Name of the directory where to save files
-plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
-  
+plot_FD_effect_resilience = function(data_model, dir.in){
   # Name of the files
   fig.file.in = paste0(dir.in, "/fig_FD_effect_resilience_storm.jpg")
   fig.file.predictions = paste0(dir.in, "/observed_vs_predicted_H1.jpg")
+  fig.file.residuals = paste0(dir.in, "/residuals.jpg")
+  fig.file.observations = paste0(dir.in, "/observations.jpg")
   table.file.stats = paste0(dir.in, "/stats_H1.tex")
   
   # create output directory if it doesn't exist
@@ -705,33 +705,69 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
   # Vector of response variables for which to run models
   response.vec = c("resilience", "resistance", "recovery")
   
-  
-  
   # Data to fit the models
   data.in = cbind(data_model[, response.vec], 
-                  scale((data_model %>% dplyr::select("H" = R_metric, "FD", "CWM")), 
-                        center = TRUE, scale = TRUE)) %>%
+                  scale((data_model %>% dplyr::select(
+                    "H.scaled" = "H", "FD.scaled" = "FD", "CWM.scaled" = "CWM")), 
+                    center = TRUE, scale = TRUE)) %>%
     mutate(resilience = log(resilience), 
            recovery = log(recovery))
   
   # Initialize the table with statistics
-  table.stats = data.frame(col1 = "", col2 = "Est", col3 = "se", col4 = "F", col5 = "p")
+  table.stats = data.frame(col1 = "", col2 = "Est", col3 = "se", col4 = "F", col5 = "p", col6 = "VIF")
   
   # Loop on all response variables
   for(j in 1:length(response.vec)){
     
     # Fit model
     eval(parse(text = paste0(
-      "model.j = lm(", response.vec[j], " ~ H + FD + CWM, data = data.in)"
+      "model.j = lm(", response.vec[j], " ~ H.scaled + FD.scaled + CWM.scaled, data = data.in)"
     )))
     
-    # Data for predictions
+    # Data for predictions vs observations
     data.predict.j = data.in %>%
       mutate(predicted = predict(model.j, newdata = .)) %>%
       rename("observed" = response.vec[j]) %>%
-      mutate(response.var = response.vec[j]) %>%
-      dplyr::select(response.var, predicted, observed)
+      mutate(response.var = response.vec[j], 
+             residuals = model.j$residuals, 
+             H = data_model$H, FD = data_model$FD, CWM = data_model$CWM) %>%
+      dplyr::select(response.var, H, H.scaled, FD, FD.scaled, CWM, CWM.scaled, 
+                    predicted, observed, residuals)
     
+    # Models to unscale explanatory variables
+    unscale.H = lm(H ~ H.scaled, data.predict.j)
+    unscale.FD = lm(FD ~ FD.scaled, data.predict.j)
+    unscale.CWM = lm(CWM ~ CWM.scaled, data.predict.j)
+    
+    # Data for fit
+    for(i in 1:3){
+      var.exp.i = c("H", "FD", "CWM")[i]
+      data.fit.i = data.frame(
+        H.scaled = seq(from = min(data.in$H.scaled), to = max(data.in$H.scaled), length.out = 100), 
+        FD.scaled = seq(from = min(data.in$FD.scaled), to = max(data.in$FD.scaled), length.out = 100), 
+        CWM.scaled = seq(from = min(data.in$CWM.scaled), to = max(data.in$CWM.scaled), length.out = 100), 
+        exp.var = var.exp.i, 
+        response.var = response.vec[j]) %>%
+        # Set to the mean for variables that are not var i
+        mutate(H.scaled = ifelse(exp.var == "H", H.scaled, mean(data.predict.j$H.scaled)), 
+               FD.scaled = ifelse(exp.var == "FD", FD.scaled, mean(data.predict.j$FD.scaled)), 
+               CWM.scaled = ifelse(exp.var == "CWM", CWM.scaled, mean(data.predict.j$CWM.scaled))) %>%
+        # Add unscaled values
+        mutate(H = predict(unscale.H, newdata = .), 
+               FD = predict(unscale.FD, newdata = .), 
+               CWM = predict(unscale.CWM, newdata = .)) %>%
+        cbind(predict(model.j, newdata = ., interval = "confidence")) %>%
+        # Modify prediction
+        mutate(fit = ifelse(response.var == "resistance", plogis(fit), exp(fit)), 
+               lwr = ifelse(response.var == "resistance", plogis(lwr), exp(lwr)), 
+               upr = ifelse(response.var == "resistance", plogis(upr), exp(upr))) %>%
+        # Keep only columns needed
+        dplyr::select("response.var", "exp.var", "exp.var.value" = var.exp.i, 
+                      "observed" = "fit", "lwr", "upr")
+      if(i == 1 & j == 1) data.fit = data.fit.i
+      else data.fit = rbind(data.fit, data.fit.i)
+      
+    }
     
     # Output data set for model i j 
     data.out.j = data.frame(
@@ -751,7 +787,8 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
         col3 = c("", paste0(round(summary(model.j)$r.squared, digits = 2), ")"), 
                  round(summary(model.j)$coefficients[-1, 2], digits = 2)), 
         col4 = c("", "", round(anova(model.j)[-dim(anova(model.j))[1], 4], digits = 2)), 
-        col5 = c("", "", scales::pvalue(anova(model.j)[-dim(anova(model.j))[1], 5]))
+        col5 = c("", "", scales::pvalue(anova(model.j)[-dim(anova(model.j))[1], 5])), 
+        col6 = c("", "", round(vif(model.j), digits = 2))
       ))
     
     # Add to the final output dataset
@@ -767,6 +804,10 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
   
   # Plot predicted vs observed
   plot.predictions = data.predict %>%
+    mutate(observed = ifelse(response.var == "resistance", 
+                             plogis(observed), exp(observed)), 
+           predicted = ifelse(response.var == "resistance", 
+                             plogis(predicted), exp(predicted))) %>%
     ggplot(aes(x = observed, y = predicted)) + 
     geom_point(shape = 21, color = "black", fill = "grey", alpha = 0.5) + 
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") + 
@@ -775,6 +816,47 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
     theme(panel.background = element_rect(fill = "white", color = "black"), 
           panel.grid = element_blank(), 
           strip.background = element_blank())
+  
+  # Plot residuals vs explanatory variables
+  plot.residuals = data.predict %>%
+    dplyr::select(response.var, residuals, H, FD, CWM) %>%
+    gather(key = "exp.var", value = "exp.var.value", "H", "FD", "CWM") %>%
+    ggplot(aes(x = exp.var.value, y = residuals, fill = response.var, color = response.var)) + 
+    scale_fill_manual(values = c("#9B2226", "#386641", "#33658A")) +
+    scale_color_manual(values = c("#9B2226", "#386641", "#33658A")) +
+    geom_point(shape = 21, color = "black", alpha = 0.5) + 
+    facet_grid(response.var ~ exp.var, scales = "free") + 
+    geom_hline(yintercept = 0, linetype = "dashed") + 
+    geom_smooth(method = "loess") +
+    xlab("Value of species composition metric") +
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          strip.text = element_text(face = "bold"), 
+          legend.position = "none")
+  
+  # Plot observations along with prediction
+  plot.observed = data.predict %>%
+    dplyr::select(response.var, observed, predicted, H, FD, CWM) %>%
+    gather(key = "exp.var", value = "exp.var.value", "H", "FD", "CWM") %>%
+    mutate(observed = ifelse(response.var == "resistance", 
+                             plogis(observed), exp(observed))) %>%
+    ggplot(aes(x = exp.var.value, y = observed, fill = exp.var, 
+               color = exp.var, group = interaction(response.var, exp.var))) + 
+    geom_ribbon(data = data.fit, aes(ymin = lwr, ymax = upr), inherit.aes = TRUE, 
+                alpha = 0.2, color = NA) +
+    geom_line(data = data.fit, inherit.aes = TRUE, size = 1) +
+    geom_smooth(method = "loess", size = 1, color = "black") +
+    scale_fill_manual(values = c("#9B2226", "#386641", "#33658A")) +
+    scale_color_manual(values = c("#9B2226", "#386641", "#33658A")) +
+    geom_point(shape = 21, color = "black", alpha = 0.4) + 
+    facet_grid(response.var ~ exp.var, scales = "free") + 
+    xlab("Value of species composition metric") +
+    theme(panel.background = element_rect(color = "black", fill = "white"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          strip.text = element_text(face = "bold"), 
+          legend.position = "none")
   
   # Plot the estimates
   plot.out = data.out %>%
@@ -801,6 +883,10 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
          dpi = 600, bg = "white")
   ggsave(fig.file.predictions, plot.predictions, width = 14, height = 5, 
          units = "cm", dpi = 600, bg = "white")
+  ggsave(fig.file.residuals, plot.residuals, width = 21, height = 15, 
+         units = "cm", dpi = 600, bg = "white")
+  ggsave(fig.file.observations, plot.observed, width = 21, height = 15, 
+         units = "cm", dpi = 600, bg = "white")
   
   # Save tex file
   print(xtable(table.stats, type = "latex", 
@@ -813,7 +899,6 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
   
   # Return name of the file saved
   return(c(fig.file.in, fig.file.predictions, table.file.stats))
-  
 }
 
 
@@ -830,9 +915,7 @@ plot_FD_effect_resilience = function(data_model, R_metric = "nsp", dir.in){
 #'                      AIC ("AIC") or p-values ("pvalue")
 #' @param file.in Name of the file to save, inlcuding path
 plot_FD_effect_vs_climate_quadra = function(
-  data_model, R_metric = "nsp", mod_selection = "pvalue", dir.in){
-  
-  # create output directory if it doesn't exist
+  data_model, R_metric = "nsp", mod_selection = "pvalue", dir.in){# create output directory if it doesn't exist
   create_dir_if_needed(paste0(dir.in, "/test"))
   
   # Vector of response variables for which to run models
@@ -871,22 +954,6 @@ plot_FD_effect_vs_climate_quadra = function(
   # Vector that contains interaction terms
   vec.interaction = c("", "*Clim", "*Clim2")
   
-  #' Function to build vector that contains full expression 
-  #' @param vec.exp.in vector of explanatory variables
-  #' @param vec.interaction.in vector containing interaction term
-  build_expr = function(vec.exp.in, vec.interaction.in){
-    vec.out = c()
-    for(exp in vec.exp.in) vec.out = c(
-      vec.out, paste(paste0(exp, vec.interaction.in), collapse = " + ")
-    )
-    return(vec.out)
-  }
-  
-  # Small function to extract position of an interaction between two factors 
-  # in coefficients of a model
-  find_interaction = function(word1, word2, vec){
-    which(vec %in% c(paste0(word1, ":", word2), paste0(word2, ":", word1)))
-  }
   
   # Initialize list of models
   model.list = list()
@@ -902,94 +969,62 @@ plot_FD_effect_vs_climate_quadra = function(
     lwr = numeric(0), upr = numeric(0)
   )
   
+  # All possible factor combination to include in model
+  # -- All possible interactions to include in the model
+  possible.interactions = c(paste0(vec.exp, "*Clim"), paste0(vec.exp, "*Clim2"))
+  # -- All possible combinations of these interactions
+  combi.interactions = expand.grid(rep(list(0:1), length(possible.interactions)))
+  # -- Create vector of all factor combinations
+  combi.formula = data.frame(model = paste0("model", c(1:dim(combi.interactions)[1])), 
+                             formula = array(paste(vec.exp, collapse = " + "), 
+                                             dim = dim(combi.interactions)[1]), 
+                             nvar = NA_real_, AIC = NA_real_)
+  # -- Loop on all possible combination of interactions
+  for(k in 1:dim(combi.interactions)[1]){
+    if(sum(combi.interactions[k, ]) > 0){
+      combi.formula$formula[k] = paste(
+        c(combi.formula$formula[k], possible.interactions[which(combi.interactions[k, ] == 1)]), 
+        collapse = " + ")
+    }
+  }
+  
+  # Initialize the list of all models
+  list.models = list()
+  
   # Initialize dataset containing metric vs climate data + fit
   # Loop on all response variables
   for(j in 1:length(response.vec)){
     
-    # Write different part of the formula
-    formula.beg.j = paste0("model.ref.j = lm(", response.vec[j], " ~ ")
-    formula.end.j = ", data = data.in)"
-    formula.model.ref.j = paste(build_expr(vec.exp, vec.interaction), collapse = " + ")
+    # Initialize the table with formulas
+    combi.formula.j = combi.formula
     
-    # Fit reference model
-    eval(parse(text = paste0(formula.beg.j, formula.model.ref.j, formula.end.j)))
+    # Initialize the list of models for response var j
+    eval(parse(text = paste0("list.models$", response.vec[j], " = list()")))
     
-    # Vector containing the pvalue of each factor in the full model
-    pval.vec.j = summary(model.ref.j)$coefficients[, 4]
+    # Loop on all possible formulas
+    for(i in 1:dim(combi.formula.j)[1]){
+      
+      # Run model with response var j and formula i
+      eval(parse(text = paste0("model.ij = lm(", response.vec[j], " ~ ", 
+                               combi.formula.j$formula[i], ", data = data.in)")))
+      
+      # Add AIC in the table
+      combi.formula.j$AIC[i] = AIC(model.ij)
+      # Add the number of variables in the table
+      combi.formula.j$nvar[i] = length(coefficients(model.ij)) - 1
+      # Store model in model list
+      eval(parse(text = paste0("list.models$", response.vec[j], "$", 
+                               combi.formula.j$model[i], " = model.ij")))
+    }
     
-    # Initialize vector for the final formula of model j
-    formula.model.j = c()
+    # Spot the best model based on the AIC
+    id.model.j = which(combi.formula.j$AIC == min(combi.formula.j$AIC))
+    
+    # Assign the reference model 
+    model.j = list.models[[j]][[id.model.j]]
     
     # Name of the stat tables to export 
     files.stat.table = paste0(dir.in, "/stat_H2_", response.vec, ".tex")
-    
-    # First loop on all explanatory variables to remove non significant interactions
-    for(i1 in 1:length(vec.exp)){
-      
-      # Initialize the formula
-      formula.model.ij = ""
-      
-      # Run two models: 
-      
-      # - without quadratic term
-      # --- Formula
-      formula.model.ij.simple = paste(
-        c(build_expr(vec.exp[i1], vec.interaction[1:2]), 
-          build_expr(vec.exp[!(c(1:3) %in% i1)], vec.interaction)), 
-        collapse = " + ")
-      # --- fit
-      eval(parse(text = paste0(
-        "model.ij.simple = lm(", response.vec[j], " ~ ", formula.model.ij.simple, formula.end.j)))
-      # --- Vector containing the pvalue of each factor in the model
-      pval.vec.ij.simple = summary(model.ij.simple)$coefficients[, 4]
-      
-      # - without interaction
-      # --- Formula
-      formula.model.ij.0 = paste(
-        c(build_expr(vec.exp[i1], vec.interaction[1]), 
-          build_expr(vec.exp[!(c(1:3) %in% i1)], vec.interaction)), 
-        collapse = " + ")
-      # --- fit
-      eval(parse(text = paste0(
-        "model.ij.0 = lm(", response.vec[j], " ~ ", formula.model.ij.0, formula.end.j)))
-      
-      # Select the right formula based on AIC
-      if(mod_selection == "AIC"){
-        if(AIC(model.ij.simple) - AIC(model.ref.j) > 2){
-          if(AIC(model.ij.0) - AIC(model.ij.simple) > 2){
-            formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction[1]))
-          } else {
-            formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction[1:2]))
-          }
-        } else {
-          formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction))
-        }
-      }
-      
-      
-      # Select the right formula based on pvalue
-      if(mod_selection == "pvalue"){
-        if(pval.vec.j[find_interaction(vec.exp[i1], "Clim2", names(pval.vec.j))] >= 0.05){
-          if(pval.vec.ij.simple[find_interaction(vec.exp[i1], "Clim", names(pval.vec.ij.simple))] >= 0.05){
-            formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction[1]))
-          } else {
-            formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction[1:2]))
-          }
-        } else { 
-          formula.model.ij = paste0(formula.model.ij, build_expr(vec.exp[i1], vec.interaction))
-        }
-      }
-      
-      # Add selected formula to the vector of formula
-      formula.model.j = c(formula.model.j, formula.model.ij)
-    }
-    
-    # Paste together elements of formula model j
-    formula.model.j = paste(formula.model.j, collapse = " + ")
-    
-    # Run final model for response variable j
-    eval(parse(text = paste0("model.j = lm(", response.vec[j], " ~ ", 
-                             formula.model.j, formula.end.j)))
     
     ## Export stats of the model
     # -- Create table
@@ -998,17 +1033,18 @@ plot_FD_effect_vs_climate_quadra = function(
       col2 = c("Est", round(as.numeric(coef(model.j)[-1]), digits = 2)), 
       col3 = c("se", round(summary(model.j)$coefficients[-1, 2], digits = 2)), 
       col4 = c("F", round(anova(model.j)[-dim(anova(model.j))[1], 4], digits = 2)), 
-      col5 = c("p", scales::pvalue(anova(model.j)[-dim(anova(model.j))[1], 5]))
+      col5 = c("p", scales::pvalue(anova(model.j)[-dim(anova(model.j))[1], 5])), 
+      col6 = c("VIF", round(vif(model.j), digits = 2))
     )
     # -- Export the table
-    print(xtable(table.stat.j, type = "latex", 
-                 caption = paste0("Statistics of the models used to test the ", 
-                                  "effect of climate 
-                                  and species composition on ", 
-                                  response.vec[j], " (H2)"), 
-                 label = paste0("table_stat_H1_", response.vec[j])), 
-          include.rownames=FALSE, hline.after = c(0, 1, dim(table.stat.j)[1]), 
-          include.colnames = FALSE, caption.placement = "top", 
+    print(xtable(table.stat.j, type = "latex",
+                 caption = paste0("Statistics of the models used to test the ",
+                                  "effect of climate
+                                  and species composition on ",
+                                  response.vec[j], " (H2)"),
+                 label = paste0("table_stat_H1_", response.vec[j])),
+          include.rownames=FALSE, hline.after = c(0, 1, dim(table.stat.j)[1]),
+          include.colnames = FALSE, caption.placement = "top",
           file = files.stat.table[j])
     
     # Coefficients of the model
@@ -1142,6 +1178,10 @@ plot_FD_effect_vs_climate_quadra = function(
   
   # Plot predicted vs observed
   plot.predictions = data.predict %>%
+    mutate(observed = ifelse(resp.var == "resistance", 
+                             plogis(observed), exp(observed)), 
+           fitted = ifelse(resp.var == "resistance", 
+                              plogis(fitted), exp(fitted))) %>%
     ggplot(aes(x = observed, y = fitted)) + 
     geom_point(shape = 21, color = "black", fill = "grey", alpha = 0.5) + 
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") + 
@@ -1206,7 +1246,6 @@ plot_FD_effect_vs_climate_quadra = function(
   
   # Return name of the file saved
   return(c(file.plot, file.plot.predictions, file.plot.fitclim, files.stat.table))
-  
 }
 
   
