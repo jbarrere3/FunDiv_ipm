@@ -483,7 +483,9 @@ get_resilience_metrics <- function(sim_disturbance, disturbance.df,
     dplyr::select(ID.forest, ID.climate, combination) %>%
     mutate(resistance = NA_real_, recovery = NA_real_, resilience = NA_real_, 
            t0 = NA_real_, thalf = NA_real_, SD = NA_real_, BA_diff = NA_real_, 
-           BA_eq = NA_real_, dbh_mean = NA_real_)
+           BA_eq = NA_real_, dbh_mean = NA_real_, dbh_q10 = NA_real_, 
+           dbh_q90 = NA_real_, dbh_mean_postdist = NA_real_, 
+           dbh_q10_postdist = NA_real_, dbh_q90_postdist = NA_real_)
   
   # Identify disturbance time
   tdist = min(disturbance.df$t)
@@ -500,16 +502,24 @@ get_resilience_metrics <- function(sim_disturbance, disturbance.df,
     # First, verify that equilibrium was reached
     if(!is.na(sim.i[1, 1])){
       
-      # mean dbh at equilibrium
-      out$dbh_mean[i] <- (sim.i %>%
+      # mean dbh at equilibrium and after disturbance
+      dbh_i = sim.i %>%
         filter(var == "n") %>%
-        filter(time == 1) %>%
+        filter(time %in% c(1, (max(disturbance.df$t)+1))) %>%
         group_by(size, time) %>%
         summarize(ntot = sum(value)) %>%
         ungroup() %>% group_by(time) %>%
         filter(size > 0) %>%
         mutate(ntot_size = ntot*size) %>%
-        summarize(mean_dbh = sum(ntot_size)/sum(ntot)))$mean_dbh
+        summarize(mean_dbh = weighted.mean(size, w = ntot), 
+                  q10_dbh = weighted.quantile(size, w = ntot, prob = 0.1), 
+                  q90_dbh = weighted.quantile(size, w = ntot, prob = 0.9))
+      out$dbh_mean[i] <- subset(dbh_i, time == 1)$mean_dbh
+      out$dbh_q10[i] <- subset(dbh_i, time == 1)$q10_dbh
+      out$dbh_q90[i] <- subset(dbh_i, time == 1)$q90_dbh
+      out$dbh_mean_postdist[i] <- subset(dbh_i, time != 1)$mean_dbh
+      out$dbh_q10_postdist[i] <- subset(dbh_i, time != 1)$q10_dbh
+      out$dbh_q90_postdist[i] <- subset(dbh_i, time != 1)$q90_dbh
       
       # Format the output
       data.i <- sim.i %>%

@@ -1323,12 +1323,17 @@ plot_climate_vs_diversity_and_structure = function(data_model, file.in){
     mutate(climate = paste0("clim", ID.climate)) %>%
     mutate(climate = factor(
       climate, levels = paste0("clim", c(1:length(unique(.$ID.climate)))))) %>%
-    dplyr::select(climate, H, FD, CWM, BA_diff, BA_eq, dbh_mean, Nha) %>%
+    mutate(dbh_mean_diff = dbh_mean_postdist - dbh_mean, 
+           dbh_q10_diff = dbh_q10_postdist - dbh_q10, 
+           dbh_q90_diff = dbh_q90_postdist - dbh_q90) %>%
+    dplyr::select(climate, H, FD, CWM, BA_diff, BA_eq, dbh_mean, Nha,
+                  dbh_mean_diff, dbh_q10_diff, dbh_q90_diff) %>%
     drop_na() %>%
-    gather(key = "variable", value = "value", "H", "FD", "CWM", 
-           "BA_eq", "dbh_mean", "Nha") %>%
+    gather(key = "variable", value = "value", "H", "FD", "CWM", "BA_eq", "Nha", 
+           "dbh_mean", "dbh_mean_diff", "dbh_q10_diff", "dbh_q90_diff") %>%
     mutate(variable = factor(variable, levels = c(
-      "H", "FD", "CWM", "BA_eq", "dbh_mean", "Nha"))) %>%
+      "H", "FD", "CWM", "BA_eq", "dbh_mean", "Nha", "dbh_mean_diff", 
+      "dbh_q10_diff", "dbh_q90_diff"))) %>%
     ggplot(aes(x = climate, y = value, fill = climate)) + 
     geom_boxplot(alpha = 0.7) + 
     scale_fill_manual(values = colorRampPalette(c("blue", "orange"))(10)) +
@@ -1342,7 +1347,7 @@ plot_climate_vs_diversity_and_structure = function(data_model, file.in){
   
   
   # Save the plot
-  ggsave(file.in, plot.out, width = 17, height = 12, 
+  ggsave(file.in, plot.out, width = 17, height = 18, 
          units = "cm", dpi = 600, bg = "white")
   
   # Return the name of the file
@@ -1592,3 +1597,68 @@ plot_sem_supp = function(data_model, FD_metric = "FD", R_metric = "H",
   # return the name of all the plots made
   return(c(fig.file.in))
 }
+
+
+
+
+#' Plot a list of simulations
+#' @param sim_disturbance.in list of simulations
+#' @param file.in Name including path of the file to save
+plot_sim_dist <- function(sim_disturbance.in, file.in){
+  
+  # Create directory if needed
+  create_dir_if_needed(file.in)
+  
+  # Loop on all species combinations
+  for(i in 1:length(sim_disturbance.in)){
+    
+    # Printer
+    print(paste0(i, "/", length(sim_disturbance.in)))
+    
+    # Read simulation
+    sim.i = readRDS(sim_disturbance.in[i])
+    
+    # Vector of species for simulation i
+    sp.vec.i <- unique(sim.i$species)
+    
+    # Format data for plotting simulation i
+    data.i <- sim.i %>%
+      # Remove unused lines and columns
+      filter(var == "BAsp") %>%
+      dplyr::select(species, time, value) %>%
+      distinct() %>%
+      # Calculate the sum of basal area
+      spread(key = "species", value = "value") %>%
+      mutate(all = rowSums(.[, c(2:dim(.)[2])])) %>%
+      gather(key = "species", value = "value", c(sp.vec.i, "all")) %>%
+      # Add simulation ID
+      mutate(ID = i)
+    
+    # Add to final dataset
+    if(i == 1) data = data.i
+    else data <- rbind(data, data.i)
+  }
+  
+  # Make the plot 
+  plot.out <- data %>%
+    mutate(species = factor(
+      species, levels = c("all", unique((filter(data, species != "all"))$species)))) %>%
+    ggplot(aes(x = time, y = value, group = species, color = species)) + 
+    geom_line() + 
+    facet_wrap(~ ID) + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          strip.background = element_blank(), 
+          strip.text = element_blank(),
+          legend.title = element_blank(), 
+          legend.key = element_blank()) + 
+    xlab("Time (years)") + ylab("Basal area")
+  
+  # - Save the plot
+  ggsave(file.in, plot.out, width = 21, height = 14, units = "cm", dpi = 600, bg = "white")
+  
+  # return the name of all the plots made
+  return(file.in)
+}
+
+

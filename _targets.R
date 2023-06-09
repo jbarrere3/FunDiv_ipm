@@ -24,7 +24,7 @@ lapply(grep("R$", list.files("R"), value = TRUE), function(x) source(file.path("
 packages.in <- c("dplyr", "ggplot2", "matreex", "tidyr", "data.table", 
                  "factoextra", "modi", "sf", "rnaturalearth", "scales", 
                  "cowplot", "multcomp", "piecewiseSEM", "future", "FD", "GGally", 
-                 "statmod", "xtable", "car")
+                 "statmod", "xtable", "car", "modi")
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
@@ -201,7 +201,12 @@ list(
   
   # SEM with additional relations
   tar_target(fig_sem_supp, plot_sem_supp(
-    data_model_storm, dir.in = "output/supplementary"), format = "file")
+    data_model_storm, dir.in = "output/supplementary"), format = "file"), 
+  
+  # Plot some simulations
+  tar_target(fig_simulations, plot_sim_dist(
+    sim_disturbance_storm[data_model_storm$ID.forest[c(1:12)]], 
+    "output/supplementary/simulations.jpg"), format = "file")
   
   
   
