@@ -61,9 +61,8 @@ plot_traits_pca <- function(traits, species.in, file.in){
   vec.pca.axis = eval(parse(text = paste0(
     "c(", paste(round(range(res.ind$pca1), digits = 0), collapse = ":"), ")")))
   
-  # - Vector indicating if each species is present in simulations or not
-  species.in.sim = gsub("\\ ", "\\_", res.ind$species) %in% species.in
-  res.ind$species[!species.in.sim]
+  # - Remove species not present in the simulations
+  res.ind = res.ind %>% filter(species %in% gsub("\\_", "\\ ", species.in))
   
   # Make the plot
   plot.out <- res.var %>%
@@ -79,7 +78,7 @@ plot_traits_pca <- function(traits, species.in, file.in){
     geom_segment(x=0.235, xend=max(res.ind$var.pos), y=0, yend=0, 
                  linetype = "dashed") +
     # x bottom axis
-    geom_segment(x=0.22, xend=0.22, y=min(vec.pca.axis), yend=max(vec.pca.axis)) + 
+    geom_segment(x=0, xend=0, y=min(vec.pca.axis), yend=max(vec.pca.axis)) + 
     # x top axis
     geom_segment(x=max(res.ind$var.pos), xend=max(res.ind$var.pos), 
                  y=min(res.ind$pca1), yend=max(res.ind$pca1)) + 
@@ -92,12 +91,9 @@ plot_traits_pca <- function(traits, species.in, file.in){
                  aes(x = var.pos, y = pca1, yend = pca1), 
                  size = 0.2) + 
     # text of the top axis
-    annotate(geom = "text", fontface = 'italic', x = res.ind$var.pos[!species.in.sim]+1,
-             y = res.ind$pca1_seq[!species.in.sim], label = res.ind$species[!species.in.sim],
-             angle = 90, hjust = 0, size = 3) + 
-    annotate(geom = "text", fontface = 'italic', x = res.ind$var.pos[species.in.sim]+1,
-             y = res.ind$pca1_seq[species.in.sim], label = res.ind$species[species.in.sim],
-             angle = 90, hjust = 0, size = 3, color = "blue") + 
+    annotate(geom = "text", fontface = 'italic', x = res.ind$var.pos+1,
+             y = res.ind$pca1_seq, label = res.ind$species,
+             angle = 90, hjust = 0, size = 3, color = "black") + 
     coord_flip() + 
     theme(panel.background = element_rect(fill = "white", color = "white"), 
           panel.grid = element_blank(), 
@@ -174,7 +170,7 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
     summarize(n = n()) %>%
     ggplot(aes(x = pca1_median, y = n, fill = pca1_median)) +
     geom_bar(color = "black", stat = "identity") +
-    scale_fill_gradientn(colors = colorRampPalette(c("blue", "orange"))(n.cat)) +
+    scale_fill_gradientn(colors = colorRampPalette(c("orange", "blue"))(n.cat)) +
     ylab("Number of\nNFI plots") + 
     theme(panel.background = element_rect(color = "black", fill = "white"), 
           panel.grid = element_blank(), 
@@ -192,7 +188,7 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
     dplyr::select(pca1_min, pca1_max, pca1_median) %>%
     arrange(pca1_min) %>%
     distinct() %>%
-    mutate(color = colorRampPalette(c("blue", "orange"))(dim(.)[1]))
+    mutate(color = colorRampPalette(c("orange", "blue"))(dim(.)[1]))
   
   
   
@@ -256,7 +252,7 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
   plot.map <- ne_countries(scale = "medium", returnclass = "sf") %>%
     ggplot(aes(geometry = geometry)) +
     geom_sf(fill = "#343A40", color = "gray", show.legend = F, size = 0.2) + 
-    geom_sf(data = datatest, aes(color = climate), size = 0.01, alpha = 0.5) +
+    geom_sf(data = datatest, aes(color = climate), size = 0.005, alpha = 0.5) +
     scale_color_manual(
       values = c("gray", colorRampPalette(
         c(color.data.map$color[1], color.data.map$color[dim(color.data.map)[1]]))(
@@ -497,12 +493,12 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
   
   # -- Make model
   mod_sem = psem(
-    glm(FD_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
+    glm(FD_scaled ~ climate_scaled + H_scaled, family = tweedie(var.power = 1), 
         data = data.in), 
-    glm(H_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
+    glm(H_scaled ~ climate_scaled, family = tweedie(var.power = 1), 
         data = data.in), 
     lm(CWM_scaled ~ climate_scaled, data = data.in), 
-    lm(resistance.log_scaled ~ FD_scaled + CWM_scaled + H_scaled, 
+    lm(resistance.log_scaled ~ FD_scaled + CWM_scaled + H_scaled + climate_scaled, 
        data = data.in), 
     lm(recovery.log_scaled ~ FD_scaled + CWM_scaled + climate_scaled + H_scaled, 
        data = data.in), 
@@ -571,17 +567,23 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
               by = "var.exp") %>%
     # Add start and end of each arrow
     mutate(
-      arrow.beg.y = ifelse((var.exp %in% c(R_metric, "CWM") & var.resp == "resilience"),
-                           center.y.resp, (center.y.exp - 0.5*box.height)), 
-      arrow.beg.x = center.x.exp, 
-      arrow.end.y = ifelse((var.exp %in% c(R_metric, "CWM") & var.resp == "resilience"),
-                           center.y.resp, (center.y.resp + 0.5*box.height)), 
+      arrow.beg.y = case_when(
+        (var.exp %in% c(R_metric, "CWM") & var.resp == "resilience") ~ center.y.resp, 
+        (var.exp == "H" & var.resp == "FD") ~ center.y.resp, 
+        TRUE ~ (center.y.exp - 0.5*box.height)), 
+      arrow.beg.x = ifelse((var.exp == "H" & var.resp == "FD"),
+                           (center.x.exp + 0.5*box.width), center.x.exp), 
+      arrow.end.y = case_when(
+        (var.exp %in% c(R_metric, "CWM") & var.resp == "resilience") ~ center.y.resp, 
+        (var.exp == "H" & var.resp == "FD") ~ center.y.resp,
+        TRUE ~ (center.y.resp + 0.5*box.height)), 
       arrow.end.x = case_when(
         (var.exp == R_metric & var.resp == "resilience") ~ (center.x.resp - 0.5*box.width), 
         (var.exp == "CWM" & var.resp == "resilience") ~ (center.x.resp + 0.5*box.width),
+        (var.exp == "H" & var.resp == "FD") ~ (center.x.resp - 0.5*box.width),
         TRUE ~ center.x.resp)) %>%
     # Report significance, sign and absolute value of estimate
-    mutate(signif = ifelse(p <= 0.05, "yes", "no"), 
+    mutate(significance = ifelse(p <= 0.05, "yes", "no"), 
            sign = ifelse(est < 0, "negative", "positive"), 
            est.abs = abs(est), 
            magnitude = case_when(
@@ -607,7 +609,7 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
         include.rownames=FALSE, hline.after = c(0, 1, dim(table.stat)[1]), 
         include.colnames = FALSE, caption.placement = "top", 
         file = table.file.in)
-
+  
   # Add stat to the plot box data
   data.plot.box = data.plot.box %>%
     left_join((data.plot.arrow %>% 
@@ -616,14 +618,14 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
                  distinct() %>% 
                  mutate(text_stat = paste0(text, "\n", "R2 = ", R2))), 
               by = "text") %>%
-    mutate(text_stat = ifelse(is.na(text_stat), text, text_stat))
+    mutate(text_stat = ifelse(text == "climate", "Hot-dry to\ncold-wet", text_stat))
   
   # Add rectangles
   data.box.cat = data.plot.box %>%
     mutate(cat = case_when(
       text == "climate" ~ "Climate", 
       text %in% c(R_metric, "FD", "CWM") ~ "Species\ncomposition", 
-      text %in% c("resistance", "recovery", "resilience") ~ "Resilience"
+      text %in% c("resistance", "recovery", "resilience") ~ "Response to\ndisturbance"
     )) %>%
     group_by(cat) %>%
     summarise(xmin = min(xmin) - 0.05*diff(range(data.plot.box$center.x)), 
@@ -640,11 +642,11 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
               data = data.box.cat,  color = "black", inherit.aes = TRUE, 
               show.legend = FALSE, alpha = 0.5)+ 
     geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax), 
-              color = "black", fill = "#415A77", alpha = 0.7)+ 
+              color = "black", fill = "#2B2D42")+ 
     geom_text(aes(label = text_stat), color = "white", size = 4) + 
     geom_text(aes(label = cat), data = data.box.cat,
               hjust = 0, size = 4, inherit.aes = TRUE) +
-    scale_fill_manual(values = c("#FF6F59", "#7678ED", "#43AA8B")) +
+    scale_fill_manual(values = c("#F28F3B", "#A9D6E5", "#38B000")) +
     xlim(min(data.box.cat$xmin) - 0.05*diff(range(data.plot.box$center.x)), 
          max(data.box.cat$center.x) + 0.3*diff(range(data.plot.box$center.x))) +
     theme(axis.title = element_blank(), 
@@ -664,12 +666,12 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
                                  var.resp == "resilience"), 
                  aes(x = center.x.exp, xend = center.x.exp, 
                      y = center.y.exp - 0.5*box.height, yend = center.y.resp, 
-                     size = magnitude, linetype = signif, color = sign)) + 
+                     size = magnitude, linetype = significance, color = sign)) + 
     # Arrows
     geom_segment(data = data.plot.arrow, 
                  aes(x = arrow.beg.x, xend = arrow.end.x, 
                      y = arrow.beg.y, yend = arrow.end.y, 
-                     size = magnitude, linetype = signif, color = sign), 
+                     size = magnitude, linetype = significance, color = sign), 
                  arrow = arrow(length = unit(0.15, "cm")), 
                  type = "closed") + 
     # -- scale linetype, color and size
@@ -915,7 +917,9 @@ plot_FD_effect_resilience = function(data_model, dir.in){
 #'                      AIC ("AIC") or p-values ("pvalue")
 #' @param file.in Name of the file to save, inlcuding path
 plot_FD_effect_vs_climate_quadra = function(
-  data_model, R_metric = "nsp", mod_selection = "pvalue", dir.in){# create output directory if it doesn't exist
+  data_model, R_metric = "nsp", mod_selection = "pvalue", dir.in){
+  
+  # create output directory if it doesn't exist
   create_dir_if_needed(paste0(dir.in, "/test"))
   
   # Vector of response variables for which to run models
@@ -1065,7 +1069,8 @@ plot_FD_effect_vs_climate_quadra = function(
       text_ij = paste0(vec.exp[i2], ": ", pvalue(
         summary(model.j)$coefficients[vec.exp[i2], 4], add_p = TRUE, accuracy = 0.01))
       # -- Add interaction with climate (equals 1 * climate scaled) if included in the model
-      if(length(grep(vec.exp[i2], names(beta.j))) > 1){
+      if(paste0(vec.exp[i2], ":Clim") %in% names(beta.j) | 
+         paste0("Clim:", vec.exp[i2]) %in% names(beta.j)){
         if(paste0(vec.exp[i2], ":Clim") %in% names(beta.j)) int.name.ij = paste0(vec.exp[i2], ":Clim")
         if(paste0("Clim:", vec.exp[i2]) %in% names(beta.j)) int.name.ij = paste0("Clim:", vec.exp[i2])
         newdata.j[, int.name.ij] = data.clim$pca1.scaled
@@ -1074,7 +1079,8 @@ plot_FD_effect_vs_climate_quadra = function(
           summary(model.j)$coefficients[int.name.ij, 4], add_p = TRUE, accuracy = 0.01)))
       }
       # -- Add interaction with climate quadratic (equals 1 * climate scaled^2)
-      if(length(grep(vec.exp[i2], names(beta.j))) > 2){
+      if(paste0(vec.exp[i2], ":Clim2") %in% names(beta.j) | 
+         paste0("Clim2:", vec.exp[i2]) %in% names(beta.j)){
         if(paste0(vec.exp[i2], ":Clim2") %in% names(beta.j)) int2.name.ij = paste0(vec.exp[i2], ":Clim2")
         if(paste0("Clim2:", vec.exp[i2]) %in% names(beta.j)) int2.name.ij = paste0("Clim2:", vec.exp[i2])
         newdata.j[, int2.name.ij] = data.clim$pca1.scaled.2
@@ -1143,6 +1149,24 @@ plot_FD_effect_vs_climate_quadra = function(
                  fitted = predict(model.j, newdata = data.in)))
   }
   
+  # Extract coefficients of the simpler models
+  for(j2 in 1:length(list.models)){
+    data.simple.j2 = data.frame(
+      var.resp = names(list.models)[j2], 
+      pca1 = max(data.out$pca1) + 0.05*diff(range(data.out$pca1)), 
+      effect = paste0(names(coefficients(list.models[[j2]][[1]]))[-1], " effect"), 
+      mean = as.numeric(coefficients(list.models[[j2]][[1]])[-1]), 
+      lwr = as.numeric(confint(list.models[[j2]][[1]])[-1, 1]), 
+      upr = as.numeric(confint(list.models[[j2]][[1]])[-1, 2]), 
+      clim = NA_character_
+    )
+    if(j2 == 1) data.simple = data.simple.j2
+    else data.simple = rbind(data.simple, data.simple.j2)
+  }
+  data.simple = data.simple  %>%
+    mutate(var.resp = factor(var.resp, levels = c("resistance", "recovery", "resilience")))
+  
+  
   # Plot the prediction and data of resilience vs climate
   plot.fit.clim = data.fit.clim %>%
     mutate(fit = ifelse(var.resp == "resistance", fit, exp(fit)), 
@@ -1174,6 +1198,7 @@ plot_FD_effect_vs_climate_quadra = function(
     mutate(pca1 = min(data.out$pca1) + 0.05*diff(range(data.out$pca1)), 
            mean = max(data.out$mean) + 0.14*diff(range(data.out$mean))) %>%
     mutate(effect = paste0(var.exp, " effect")) %>%
+    mutate(effect = factor(effect, levels = c("H effect", "FD effect", "CWM effect"))) %>%
     mutate(clim = NA_character_)
   
   # Plot predicted vs observed
@@ -1181,7 +1206,7 @@ plot_FD_effect_vs_climate_quadra = function(
     mutate(observed = ifelse(resp.var == "resistance", 
                              plogis(observed), exp(observed)), 
            fitted = ifelse(resp.var == "resistance", 
-                              plogis(fitted), exp(fitted))) %>%
+                           plogis(fitted), exp(fitted))) %>%
     ggplot(aes(x = observed, y = fitted)) + 
     geom_point(shape = 21, color = "black", fill = "grey", alpha = 0.5) + 
     geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "red") + 
@@ -1215,21 +1240,30 @@ plot_FD_effect_vs_climate_quadra = function(
   
   # Plot the estimates
   plot.out = data.out %>%
+    mutate(effect = factor(effect, levels = c("H effect", "FD effect", "CWM effect"))) %>%
     ggplot(aes(x = pca1, y = mean, group = clim, fill = clim)) + 
     geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, alpha = 0.5) +
     geom_line(color = "#001524") + 
-    xlab("Coordinate on the sgdd-wai PCA") + ylab("Effect on response to\ndisturbance metric") +
+    xlab("Coordinate on the sgdd-wai PCA\n(Hot-dry to cold/wet)") + 
+    ylab("Effect on response to\ndisturbance metric") +
     facet_grid(effect ~ var.resp) +
     geom_hline(yintercept = 0, linetype = "dashed") +
     geom_text(aes(label = text), data = data.text, inherit.aes = TRUE, 
               hjust = "inward", size = 2.5, alpha = 0.8) +
-    scale_fill_manual(values = colorRampPalette(c("blue", "orange"))(10)) +
+    scale_fill_manual(values = colorRampPalette(c("orange", "blue"))(10)) +
     ylim(c(min(data.out$lwr), max(data.out$upr) + 0.2*diff(range(data.out$mean)))) +
     theme(panel.background = element_rect(color = "black", fill = "white"), 
           panel.grid = element_blank(), 
           strip.background = element_blank(), 
           strip.text = element_text(face = "bold"), 
-          legend.position = "none")
+          legend.position = "none") + 
+    # Add point for the effect without interactions
+    geom_point(data = data.simple, aes(color = var.resp), 
+               inherit.aes = TRUE, shape = 16) +
+    geom_errorbar(data = data.simple, inherit.aes = TRUE, width = 0, 
+                  aes(color = var.resp, ymin = lwr, ymax = upr)) +
+    scale_color_manual(values = c("#9B2226", "#386641", "#33658A")) + 
+    geom_vline(xintercept = max(data.out$pca1), linetype = "solid", color = "grey")
   
   # Name of the plot to save
   file.plot = paste0(dir.in, "/fd_effect_climate.jpg")
@@ -1237,7 +1271,7 @@ plot_FD_effect_vs_climate_quadra = function(
   file.plot.fitclim = paste0(dir.in, "/data_and_fit_clim.jpg")
   
   # Save plots
-  ggsave(file.plot, plot.out, width = 13, height = 12 , units = "cm", 
+  ggsave(file.plot, plot.out, width = 16, height = 12 , units = "cm", 
          dpi = 600, bg = "white")
   ggsave(file.plot.predictions, plot.predictions, width = 14, height = 5, 
          units = "cm", dpi = 600, bg = "white")
@@ -1269,7 +1303,10 @@ plot_covariation = function(data_model, var.in, file.in){
        unit = "cm", res = 600)
   
   # Make the plot
-  pairs((data_model %>% dplyr::select(var.in)), pch = 19, lower.panel = NULL)
+  pairs((data_model %>%
+           mutate(recovery = log(recovery), 
+                  resilience = log(resilience))%>% 
+           dplyr::select(var.in) ), pch = 19, lower.panel = NULL)
   
   
   # Return name of the file generated 
@@ -1293,7 +1330,7 @@ plot_tree_packing = function(data_model, file.in){
       climate, levels = paste0("clim", c(1:length(unique(.$ID.climate)))))) %>%
     ggplot(aes(x = H, y = Nha, fill = climate)) + 
     geom_point(shape = 21, color = "black", alpha = 0.5) + 
-    scale_fill_manual(values = colorRampPalette(c("blue", "orange"))(10)) +
+    scale_fill_manual(values = colorRampPalette(c("orange", "blue"))(10)) +
     facet_wrap(~ climate, nrow = 2) + 
     geom_smooth(method = "lm", color = "red", fill = NA) + 
     theme(legend.position = "none", 
@@ -1336,7 +1373,7 @@ plot_climate_vs_diversity_and_structure = function(data_model, file.in){
       "dbh_q10_diff", "dbh_q90_diff"))) %>%
     ggplot(aes(x = climate, y = value, fill = climate)) + 
     geom_boxplot(alpha = 0.7) + 
-    scale_fill_manual(values = colorRampPalette(c("blue", "orange"))(10)) +
+    scale_fill_manual(values = colorRampPalette(c("orange", "blue"))(10)) +
     facet_wrap(~ variable, scales = "free") + 
     theme(legend.position = "none", 
           panel.grid = element_blank(), 
@@ -1393,9 +1430,9 @@ plot_sem_supp = function(data_model, FD_metric = "FD", R_metric = "H",
   
   # -- Make model
   mod_sem = psem(
-    glm(FD_scaled ~ climate_scaled + H_scaled, family = tweedie(var.power = 2), 
+    glm(FD_scaled ~ climate_scaled + H_scaled, family = tweedie(var.power = 1), 
         data = data.in), 
-    glm(H_scaled ~ climate_scaled, family = tweedie(var.power = 2), 
+    glm(H_scaled ~ climate_scaled, family = tweedie(var.power = 1), 
         data = data.in), 
     lm(CWM_scaled ~ climate_scaled + FD_scaled + H_scaled, data = data.in), 
     lm(resistance.log_scaled ~ FD_scaled + CWM_scaled + H_scaled + climate_scaled, 
@@ -1464,37 +1501,31 @@ plot_sem_supp = function(data_model, FD_metric = "FD", R_metric = "H",
               by = "var.exp") %>%
     # Add start and end of each arrow
     mutate(
-      arrow.beg.y = ifelse((var.exp %in% c(R_metric, "CWM") & var.resp == "resilience"),
-                           center.y.resp, (center.y.exp - 0.5*box.height)), 
-      arrow.beg.x = center.x.exp, 
-      arrow.end.y = ifelse((var.exp %in% c(R_metric, "CWM") & var.resp == "resilience"),
-                           center.y.resp, (center.y.resp + 0.5*box.height)), 
+      arrow.beg.y = case_when(
+        (var.exp %in% c(R_metric, "CWM") & var.resp == "resilience") ~ center.y.resp, 
+        (var.exp == "H" & var.resp == "FD") ~ center.y.resp, 
+        TRUE ~ (center.y.exp - 0.5*box.height)), 
+      arrow.beg.x = ifelse((var.exp == "H" & var.resp == "FD"),
+                           (center.x.exp + 0.5*box.width), center.x.exp), 
+      arrow.end.y = case_when(
+        (var.exp %in% c(R_metric, "CWM") & var.resp == "resilience") ~ center.y.resp, 
+        (var.exp == "H" & var.resp == "FD") ~ center.y.resp,
+        TRUE ~ (center.y.resp + 0.5*box.height)), 
       arrow.end.x = case_when(
         (var.exp == R_metric & var.resp == "resilience") ~ (center.x.resp - 0.5*box.width), 
         (var.exp == "CWM" & var.resp == "resilience") ~ (center.x.resp + 0.5*box.width),
+        (var.exp == "H" & var.resp == "FD") ~ (center.x.resp - 0.5*box.width),
         TRUE ~ center.x.resp)) %>%
-    # Modify arrow when same level
-    # mutate(
-    #   arrow.end.x = case_when(
-    #     (center.y.resp == center.y.exp & center.x.resp < center.x.exp) ~ (center.x.resp + 0.5*box.width), 
-    #     (center.y.resp == center.y.exp & center.x.resp > center.x.exp) ~ (center.x.resp - 0.5*box.width), 
-    #     TRUE ~ arrow.end.x), 
-    #   arrow.beg.x = case_when(
-    #     (center.y.resp == center.y.exp & center.x.resp < center.x.exp) ~ (center.x.exp - 0.5*box.width), 
-    #     (center.y.resp == center.y.exp & center.x.resp > center.x.exp) ~ (center.x.exp + 0.5*box.width), 
-    #     TRUE ~ arrow.beg.x), 
-    #   arrow.beg.y = ifelse(center.y.resp == center.y.exp, center.y.resp, arrow.beg.y), 
-  #   arrow.end.y = ifelse(center.y.resp == center.y.exp, center.y.resp, arrow.end.y)) %>%
-  # # Report significance, sign and absolute value of estimate
-  mutate(signif = ifelse(p <= 0.05, "yes", "no"), 
-         sign = ifelse(est < 0, "negative", "positive"), 
-         est.abs = abs(est), 
-         magnitude = case_when(
-           est.abs <= quantile(est.abs, 0.33) ~ "low", 
-           est.abs > quantile(est.abs, 0.33) & 
-             est.abs <= quantile(est.abs, 0.66) ~ "mid", 
-           TRUE ~ "high"
-         )) 
+    # Report significance, sign and absolute value of estimate
+    mutate(signif = ifelse(p <= 0.05, "yes", "no"), 
+           sign = ifelse(est < 0, "negative", "positive"), 
+           est.abs = abs(est), 
+           magnitude = case_when(
+             est.abs <= quantile(est.abs, 0.33) ~ "low", 
+             est.abs > quantile(est.abs, 0.33) & 
+               est.abs <= quantile(est.abs, 0.66) ~ "mid", 
+             TRUE ~ "high"
+           )) 
   
   # Statistics table
   # -- Make the table
@@ -1521,14 +1552,14 @@ plot_sem_supp = function(data_model, FD_metric = "FD", R_metric = "H",
                  distinct() %>% 
                  mutate(text_stat = paste0(text, "\n", "R2 = ", R2))), 
               by = "text") %>%
-    mutate(text_stat = ifelse(is.na(text_stat), text, text_stat))
+    mutate(text_stat = ifelse(text == "climate", "Hot-dry to\ncold-wet", text_stat))
   
   # Add rectangles
   data.box.cat = data.plot.box %>%
     mutate(cat = case_when(
       text == "climate" ~ "Climate", 
       text %in% c(R_metric, "FD", "CWM") ~ "Species\ncomposition", 
-      text %in% c("resistance", "recovery", "resilience") ~ "Resilience"
+      text %in% c("resistance", "recovery", "resilience") ~ "Response to\ndisturbance"
     )) %>%
     group_by(cat) %>%
     summarise(xmin = min(xmin) - 0.05*diff(range(data.plot.box$center.x)), 
@@ -1540,11 +1571,9 @@ plot_sem_supp = function(data_model, FD_metric = "FD", R_metric = "H",
   
   # -- Adjust data plot arrow to remove relations that are not of interest
   data.plot.arrow <- data.plot.arrow %>%
-    filter(!(var.resp == "FD" & var.exp == "H")) %>%
     filter(!(var.resp == "CWM" & var.exp == "H")) %>%
     filter(!(var.resp == "CWM" & var.exp == "FD")) %>%
-    filter(!(var.resp == "recovery" & var.exp == "resistance")) %>%
-    filter(!(var.resp == "resistance" & var.exp == "climate")) 
+    filter(!(var.resp == "recovery" & var.exp == "resistance")) 
   
   # -- Plot the boxes
   plot.box = data.plot.box %>%

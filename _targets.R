@@ -60,7 +60,7 @@ list(
   tar_target(fit.list.allspecies, load_param_demo(all.species.name)),
   
   # Generate some harvest rules
-  tar_target(harv_rules.ref, c(Pmax = 0.25, dBAmin = 3, freq = 10, alpha = 1)),
+  tar_target(harv_rules.ref, c(Pmax = 0.25, dBAmin = 3, freq = 5, alpha = 1)),
   
   # Data.frame containing storm disturbance to apply
   tar_target(disturbance.df_storm, data.frame(
@@ -79,7 +79,7 @@ list(
   tar_target(ID.climate_storm, c(1:10)),
   # -- list of climates
   tar_target(climate_list_storm, create_climate_list(length(ID.climate_storm), 
-                                                     quantile.range = c(0, 0.8))),
+                                                     quantile.range = c(0.2, 1))),
   # -- generate one climate object per iteration with branching
   tar_target(climate_storm, make_climate(
       FUNDIV_climate_species, quantiles.in = climate_list_storm[[ID.climate_storm]], 
@@ -121,7 +121,7 @@ list(
   # -- Format data together
   tar_target(data_model_storm_all, get_data_model(climate_storm, resilience_storm, FD_storm)),
   # -- Only keep simulations that reached equilibrium
-  tar_target(data_model_storm, subset(data_model_storm_all, (SD < 0.15 & ID.forest != 480))),
+  tar_target(data_model_storm, subset(data_model_storm_all, (SD < 0.15))),
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -206,7 +206,10 @@ list(
   # Plot some simulations
   tar_target(fig_simulations, plot_sim_dist(
     sim_disturbance_storm[data_model_storm$ID.forest[c(1:12)]], 
-    "output/supplementary/simulations.jpg"), format = "file")
+    "output/supplementary/simulations.jpg"), format = "file"), 
+  tar_target(fig_simulations_eq, plot_sim_dist(
+    sim_equilibrium_storm[data_model_storm$ID.forest[c(1:12)]], 
+    "output/supplementary/simulations_eq.jpg"), format = "file")
   
   
   
