@@ -148,7 +148,7 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
   # - Extract the coordinates of the variables on pca axis and classify by category
   res.var <- data.frame(var = rownames(get_pca_var(pca)[[1]]), 
                         # Negative because inverse of pca in original data
-                        pca1 = -get_pca_var(pca)[[1]][, 1]) %>%
+                        pca1 = get_pca_var(pca)[[1]][, 1]) %>%
     mutate(var.pos = c(1:dim(.)[1]))
   
   # Plot the arrows of the first PCA axis
