@@ -209,9 +209,37 @@ list(
     "output/supplementary/simulations.jpg"), format = "file"), 
   tar_target(fig_simulations_eq, plot_sim_dist(
     sim_equilibrium_storm[data_model_storm$ID.forest[c(1:12)]], 
-    "output/supplementary/simulations_eq.jpg"), format = "file")
+    "output/supplementary/simulations_eq.jpg"), format = "file"), 
   
   
+  
+  
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- REVISION FOR FUN ECOL -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  # Extract functional resilience
+  tar_target(fun_resilience, get_functional_resilience(
+    sim_disturbance_storm, disturbance.df_storm, forest_list_storm, pc1_per_species)),
+  # Format data together
+  tar_target(data_model_fun_all, get_data_model(climate_storm, fun_resilience, FD_storm)),
+  # Only keep simulations that reached equilibrium
+  tar_target(data_model_fun, (data_model_fun_all %>%
+               filter(CWM_sd < 0.001 & !is.na(Trec)) %>%
+               mutate(resistance = logit(resistance)))),
+
+  # Plot the effect of FD on resilience
+  tar_target(fig_FD_effect_resilience_fun, plot_FD_effect_resilience(
+    data_model_fun, "output/revisionFunEcol/analyses_H1"),
+    format = "file"),
+  # Plot how the FD effect changes with climate
+  tar_target(fig_FD_effect_vs_climate_fun, plot_FD_effect_vs_climate_quadra(
+    data_model_fun, "H", "AIC", "output/revisionFunEcol/analyses_H2"), format = "file"),
+   # Make a network analysis with peacewise SEM
+  tar_target(fig_sem_fun, plot_sem(
+    data_model_fun, "FD", "H", "recovery", "output/revisionFunEcol/analyses_H3"),
+    format = "file")
   
   
 )

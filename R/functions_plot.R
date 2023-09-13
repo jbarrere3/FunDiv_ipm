@@ -680,6 +680,54 @@ plot_sem = function(data_model, FD_metric = "FD", R_metric = "nsp",
     scale_size_manual(values = c(`low` = 0.3, `mid` = 0.6, `high` = 1.1))
   
   
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # Add additional plot with boxplots
+  
+  fig.file.bxplt.in = paste0(dir.in, "/fig_sem_full.jpg")
+  #' Sub-function to plot changes in a given variable with climate
+  #' @param data_model data formatted 
+  #' @param var.in variable to plot (resistance, resilience or recovery)
+  #' @param lab.in name of the label on the plot
+  plot.bxplt = function(data_model, var.in, lab.in){
+    
+    data_model %>%
+      rename("recov" = recovery_metric) %>%
+      mutate(climate = paste0("clim", ID.climate)) %>%
+      mutate(climate = factor(
+        climate, levels = paste0("clim", c(1:length(unique(.$ID.climate)))))) %>%
+      dplyr::select(climate, pca1, resistance, recovery = recov, resilience) %>%
+      gather(key = "variable", value = "value", "resistance", "recovery", "resilience") %>%
+      mutate(value = ifelse(variable == "resistance", value, log(value))) %>%
+      filter(variable == var.in) %>%
+      ggplot(aes(x = climate, y = value, fill = climate)) + 
+      geom_boxplot(alpha = 0.7, outlier.shape = 21) + 
+      scale_fill_manual(values = colorRampPalette(c("orange", "blue"))(10)) +
+      ylab(lab.in) + 
+      theme(legend.position = "none", 
+            panel.grid = element_blank(), 
+            panel.background = element_rect(fill = "white", color = "black"), 
+            strip.background = element_blank(), 
+            axis.text.x = element_text(angle = 60, hjust = 1), 
+            axis.title.x = element_blank()) 
+  }
+  
+  # Build the boxplots
+  plot.resistance = plot.bxplt(data_model, "resistance", "logit(Resistance)")
+  plot.recovery = plot.bxplt(data_model, "recovery", "log(Recovery)")
+  plot.resilience = plot.bxplt(data_model, "resilience", "log(Resilience)")
+  plot.bx = plot_grid(plot.resistance, plot.recovery, plot.resilience, 
+                      align = "h", scale = 0.95, labels = c("(b)", "(c)", "(d)"), 
+                      nrow = 1)
+  plot.out.full = plot_grid(plot.out, plot.bx, ncol = 1, labels = c("(a)", ""), 
+                            rel_heights = c(1, 0.4), scale = 0.9)
+  ggsave(fig.file.bxplt.in, plot.out.full, width = 20, height = 18, units = "cm", 
+         dpi = 600, bg = "white")
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  
+  
   # - Save the plot
   ggsave(fig.file.in, plot.out, width = 20, height = 12, units = "cm", dpi = 600, bg = "white")
   
@@ -879,6 +927,8 @@ plot_FD_effect_resilience = function(data_model, dir.in){
           strip.text = element_text(face = "bold"), 
           legend.position = "none") + 
     coord_flip()
+  
+  
   
   # Save plot 
   ggsave(fig.file.in, plot.out, width = 13, height = 5, units = "cm", 
@@ -1244,9 +1294,9 @@ plot_FD_effect_vs_climate_quadra = function(
     ggplot(aes(x = pca1, y = mean, group = clim, fill = clim)) + 
     geom_ribbon(aes(ymin = lwr, ymax = upr), color = NA, alpha = 0.5) +
     geom_line(color = "#001524") + 
-    xlab("Coordinate on the sgdd-wai PCA\n(Hot-dry to cold/wet)") + 
+    xlab("Coordinate on the sgdd-wai PCA\n(Hot-dry to cold-wet climatic gradient)") + 
     ylab("Effect on response to\ndisturbance metric") +
-    facet_grid(effect ~ var.resp) +
+    facet_grid(effect ~ var.resp, scales = "free") +
     geom_hline(yintercept = 0, linetype = "dashed") +
     geom_text(aes(label = text), data = data.text, inherit.aes = TRUE, 
               hjust = "inward", size = 2.5, alpha = 0.8) +
@@ -1586,7 +1636,7 @@ plot_sem_supp = function(data_model, FD_metric = "FD", R_metric = "H",
     geom_text(aes(label = text_stat), color = "white", size = 4) + 
     geom_text(aes(label = cat), data = data.box.cat,
               hjust = 0, size = 4, inherit.aes = TRUE) +
-    scale_fill_manual(values = c("#FF6F59", "#7678ED", "#43AA8B")) +
+    scale_fill_manual(values = c("#F28F3B", "#A9D6E5", "#38B000")) +
     xlim(min(data.box.cat$xmin) - 0.05*diff(range(data.plot.box$center.x)), 
          max(data.box.cat$center.x) + 0.3*diff(range(data.plot.box$center.x))) +
     theme(axis.title = element_blank(), 

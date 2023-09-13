@@ -918,3 +918,107 @@ disturb_fun <- function(x, species, disturb = NULL, ...){
   
   return(x* Pkill) # always return the mortality distribution
 }
+
+
+
+
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+#' Below: FUNCTIONS FOR THE REVISION TO FUN ECOL
+#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+#' Get resilience, resistance and recovery from simulations with disturbance
+#' @param sim_disturbance vector containing the file names of sim with disturbance
+#' @param disturbance.df disturbance dataset used to generate the disturbance
+#' @param forest_list Table giving the information on each forest generated
+get_functional_resilience <- function(
+  sim_disturbance, disturbance.df, forest_list, pc1_per_species){
+  
+  # Standardize the trait values
+  pc1_per_species = pc1_per_species %>%
+    mutate(pca1_std = (pca1 - min(pca1))/diff(range(pca1)))
+  
+  # Initialize the output
+  out <- forest_list %>%
+    dplyr::select(ID.forest, ID.climate, combination) %>%
+    mutate(resistance = NA_real_, recovery = NA_real_, resilience = NA_real_, 
+           CWM_sd = NA_real_, CWM_diff = NA_real_, CWM_eq = NA_real_, 
+           Trec = NA_real_) 
+  
+  # Identify disturbance time
+  tdist = min(disturbance.df$t)
+  
+  # Loop on all species combination
+  for(i in 1:length(sim_disturbance)){
+    
+    # Printer
+    print(paste0("Reading simulation ", i, "/", length(sim_disturbance)))
+    
+    # Read simulation i
+    sim.i = readRDS(sim_disturbance[i])
+    
+    # First, verify that equilibrium was reached
+    if(!is.na(sim.i[1, 1])){
+      
+      # Range of cwm of the species present
+      cwm_range.i = range(
+        subset(pc1_per_species, species %in% unique(sim.i$species))$pca1_std)
+      
+      # Only extract information for plurispecific stands
+      if(diff(cwm_range.i) > 0){
+        
+        # Format the data to calculate functional resilience
+        data.i = sim.i %>%
+          filter(var == "BAsp" & !equil) %>%
+          left_join(pc1_per_species, by = "species") %>%
+          ungroup() %>%
+          mutate(pca1_std = (pca1_std - cwm_range.i[1])/diff(cwm_range.i)) %>%
+          group_by(time) %>%
+          summarize(cwm = weighted.mean(pca1_std, w = value))
+        
+        ## Calculate stability before disturbance (to check equilibrium)
+        out$CWM_sd[i] = sd(subset(data.i, time %in% c(1:(tdist-1)))$cwm)
+        out$CWM_diff[i] = diff(range(subset(data.i, time %in% c(1:(tdist-1)))$cwm))
+        
+        ## Calculate resistance
+        #  - CWM at equilibrium
+        cwm_eq.i = mean(range(subset(data.i, time %in% c(1:(tdist-1)))$cwm))
+        out$CWM_eq[i] = cwm_eq.i
+        # - CWM after disturbance
+        CWM_dist.i = (data.i %>% filter(time == max(disturbance.df$t)+1))$cwm
+        # - Resistance : percentage of cwm that remained unchanged
+        out$resistance[i] = abs(CWM_dist.i - cwm_eq.i)
+        
+        
+        ## Calculate recovery
+        #  - Time at which population recovered fully
+        if(CWM_dist.i < cwm_eq.i){
+          out$Trec[i] = min(
+            (data.i %>% 
+               filter(time > max(disturbance.df$t)) %>%
+               filter(cwm > cwm_eq.i))$time) - max(disturbance.df$t)
+        } else {
+          out$Trec[i] = min(
+            (data.i %>% 
+               filter(time > max(disturbance.df$t)) %>%
+               filter(cwm < cwm_eq.i))$time) - max(disturbance.df$t)
+        }
+        # - Basal area 20 years after disturbance
+        cwm_dist20.i = (data.i %>% filter(time == max(disturbance.df$t)+21))$cwm
+        # - Recovery = slope of BA increase in teh 20 years after disturbance
+        out$recovery[i] = abs(cwm_dist20.i - CWM_dist.i)/20
+        
+        ## Calculate resilience
+        out$resilience[i] <- 1/sum((data.i %>%
+                                      filter(time >= min(disturbance.df$t)) %>%
+                                      mutate(diff = abs(cwm - cwm_eq.i)))$diff)
+        
+      }
+      
+    }
+    
+  }
+  
+  # Return output
+  return(out)
+}
