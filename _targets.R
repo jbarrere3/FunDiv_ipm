@@ -24,7 +24,7 @@ lapply(grep("R$", list.files("R"), value = TRUE), function(x) source(file.path("
 packages.in <- c("dplyr", "ggplot2", "matreex", "tidyr", "data.table", 
                  "factoextra", "modi", "sf", "rnaturalearth", "scales", 
                  "cowplot", "multcomp", "piecewiseSEM", "future", "FD", "GGally", 
-                 "statmod", "xtable", "car", "modi")
+                 "statmod", "xtable", "car", "modi", "grid", "gridExtra")
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
@@ -45,12 +45,20 @@ list(
   # -- Load data -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
-  # File with data of climate and species present per FUNDIV plot
-  tar_target(FUNDIV_climate_species_file, "data/FUNDIV_climate_species.csv",
-             format = "file"), 
+  # Disturbance coefficients
+  tar_target(disturb_coef_file, "data/disturb_coef.csv", format = "file"), 
+  tar_target(disturb_coef.in, fread(disturb_coef_file)),
   
-  # Read the file
-  tar_target(FUNDIV_climate_species, fread(FUNDIV_climate_species_file)),
+  # Raw data from FUNDIV
+  tar_target(FUNDIV_tree_file, "data/FunDiv_trees_Nadja.csv", format = "file"),
+  tar_target(FUNDIV_plot_file, "data/FunDiv_plots_Nadja.csv", format = "file"),
+  tar_target(FUNDIV_species_file, "data/FunDiv_species_Nadja.csv", format = "file"),
+  tar_target(FUNDIV_climate_file, "data/moreno_chelsa_fundiv_clim.csv", format = "file"),
+  
+  # Read and format FUNDIV data
+  tar_target(FUNDIV_data, read_FUNDIV(
+    FUNDIV_tree_file, FUNDIV_plot_file, FUNDIV_climate_file, FUNDIV_species_file)),
+  tar_target(FUNDIV_climate_species, get_FUNDIV_species_per_climate(FUNDIV_data)),
   
   # List of species for which we have data
   tar_target(all.species.name, 
@@ -83,8 +91,8 @@ list(
   # -- generate one climate object per iteration with branching
   tar_target(climate_storm, make_climate(
       FUNDIV_climate_species, quantiles.in = climate_list_storm[[ID.climate_storm]], 
-      "storm", 10, exclude.in = c("Carpinus_betulus", "Quercus_ilex"), 
-      method = "frequency"), pattern = map(ID.climate_storm), iteration = "list"), 
+      "storm", 10, exclude.in = c("Carpinus_betulus", "Quercus_ilex"), method = "frequency", 
+      disturb_coef.in, pc1_per_species), pattern = map(ID.climate_storm), iteration = "list"), 
   
   # Make species objects
   # -- First: list all species object to make
@@ -108,7 +116,7 @@ list(
    pattern = map(ID.forest_storm), iteration = "vector", format = "file"),
   # -- Make simulations with disturbance
   tar_target(sim_disturbance_storm, make_simulations_disturbance(
-   climate_storm, harv_rules.ref, species_list_storm, forest_list_storm, 
+   climate_storm, harv_rules.ref, species_list_storm, forest_list_storm, disturb_coef.in,
    species_storm, sim_equilibrium_storm, ID.forest.in = ID.forest_storm, disturbance.df_storm), 
    pattern = map(ID.forest_storm), iteration = "vector", format = "file"),
    
@@ -215,32 +223,49 @@ list(
   
   
   
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- REVISION FOR FUN ECOL -----
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Revisions for Functional Ecology ----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
-  # Extract functional resilience
-  tar_target(fun_resilience, get_functional_resilience(
-    sim_disturbance_storm, disturbance.df_storm, forest_list_storm, pc1_per_species)),
-  # Format data together
-  tar_target(data_model_fun_all, get_data_model(climate_storm, fun_resilience, FD_storm)),
-  # Only keep simulations that reached equilibrium
-  tar_target(data_model_fun, (data_model_fun_all %>%
-               filter(CWM_sd < 0.001 & !is.na(Trec)) %>%
-               mutate(resistance = logit(resistance)))),
-
-  # Plot the effect of FD on resilience
-  tar_target(fig_FD_effect_resilience_fun, plot_FD_effect_resilience(
-    data_model_fun, "output/revisionFunEcol/analyses_H1"),
+  # Get recruitment traits and pca coordinates
+  tar_target(traits_rec, get_recruitment_traits(
+    fit.list.allspecies, FUNDIV_data, "same")), 
+  tar_target(pca12_per_species, get_pc12_per_species(traits, traits_rec)), 
+  
+  # Calculate functional diversity in a multivariate space
+  tar_target(FD_multivar, get_FD_multivar(
+    forest_list_storm, sim_disturbance_storm, pca12_per_species)),
+  
+  # Extract data to fit models
+  tar_target(data_model_all, get_data_model(climate_storm, resilience_storm, FD_multivar)),
+  tar_target(data_model, subset(data_model_all, (SD < 0.15))),
+  
+  # Plot traits in multivariate space
+  tar_target(fic_pca12, plot_traits_pca12(
+    traits, traits_rec, species_list_storm, "output/revisionFE/pca_traits.jpg"), 
     format = "file"),
-  # Plot how the FD effect changes with climate
-  tar_target(fig_FD_effect_vs_climate_fun, plot_FD_effect_vs_climate_quadra(
-    data_model_fun, "H", "AIC", "output/revisionFunEcol/analyses_H2"), format = "file"),
-   # Make a network analysis with peacewise SEM
-  tar_target(fig_sem_fun, plot_sem(
-    data_model_fun, "FD", "H", "recovery", "output/revisionFunEcol/analyses_H3"),
-    format = "file")
   
+  # Plot diversity and structure of raw data
+  tar_target(fig_div_str_data, plot_clim_vs_div_and_str_data(
+    FUNDIV_data, pca12_per_species, climate_list_storm, 
+    "output/revisionFE/div_str.jpg"), format = "file"), 
   
+  # Main statistical analyses
+  tar_target(fig_FD_effect_resilience_multivar, plot_FD_effect_resilience_multivar(
+    data_model, "output/revisionFE/analyses_H1"), format = "file"),
+  tar_target(fig_FD_effect_vs_climate_multivar, plot_FD_effect_vs_climate_multivar(
+    data_model, "H", "AIC", "output/revisionFE/analyses_H2"), format = "file"), 
+  tar_target(fig_sem_multivar, plot_sem_multivar(
+    data_model, "FDis", "H", "recovery", "output/revisionFE/analyses_H3"), 
+    format = "file"), 
+  
+  # Export species information in a table
+  tar_target(table_species, export_species_table(
+    FUNDIV_data, pca12_per_species, species_list_storm, 
+    "output/revisionFE/species_table.tex"), format = "file"), 
+  
+  # SEM with additional relations
+  tar_target(fig_sem_multivar_supp, plot_sem_multivar_supp(
+    data_model, dir.in = "output/revisionFE/supplementary"), format = "file")
 )
 

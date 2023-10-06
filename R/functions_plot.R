@@ -252,7 +252,7 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
   plot.map <- ne_countries(scale = "medium", returnclass = "sf") %>%
     ggplot(aes(geometry = geometry)) +
     geom_sf(fill = "#343A40", color = "gray", show.legend = F, size = 0.2) + 
-    geom_sf(data = datatest, aes(color = climate), size = 0.005, alpha = 0.5) +
+    geom_sf(data = datatest, aes(color = climate), size = 0.0001, shape = 20) +
     scale_color_manual(
       values = c("gray", colorRampPalette(
         c(color.data.map$color[1], color.data.map$color[dim(color.data.map)[1]]))(
@@ -345,7 +345,7 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
   
   # Save plot i
   ggsave(file.in, plot.out, width = 17, height = 17, units = "cm", 
-         dpi = 600, bg = "white")
+         dpi = 1400, bg = "white")
   
   # Return name of the file
   return(file.in)
@@ -754,6 +754,9 @@ plot_FD_effect_resilience = function(data_model, dir.in){
   
   # Vector of response variables for which to run models
   response.vec = c("resilience", "resistance", "recovery")
+  
+  # Remove from data model data with na
+  data_model = data_model %>% filter(!is.na(CWM))
   
   # Data to fit the models
   data.in = cbind(data_model[, response.vec], 
