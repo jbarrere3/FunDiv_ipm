@@ -229,7 +229,7 @@ list(
   
   # Get recruitment traits and pca coordinates
   tar_target(traits_rec, get_recruitment_traits(
-    fit.list.allspecies, FUNDIV_data, "same")), 
+    fit.list.allspecies, FUNDIV_data, "specific")), 
   tar_target(pca12_per_species, get_pc12_per_species(traits, traits_rec)), 
   
   # Calculate functional diversity in a multivariate space
@@ -243,6 +243,9 @@ list(
   # Plot traits in multivariate space
   tar_target(fic_pca12, plot_traits_pca12(
     traits, traits_rec, species_list_storm, "output/revisionFE/pca_traits.jpg"), 
+    format = "file"),
+  tar_target(fic_pca12_all, plot_traits_pca12_all(
+    traits, traits_rec, species_list_storm, "output/revisionFE/pca_traits_all.jpg"), 
     format = "file"),
   
   # Plot diversity and structure of raw data
@@ -266,6 +269,13 @@ list(
   
   # SEM with additional relations
   tar_target(fig_sem_multivar_supp, plot_sem_multivar_supp(
-    data_model, dir.in = "output/revisionFE/supplementary"), format = "file")
+    data_model, dir.in = "output/revisionFE/supplementary"), format = "file"),
+  
+  # Analyses without Salix
+  tar_target(data_model_noS, remove_salix(data_model)), 
+  tar_target(fig_FD_effect_resilience_multivar_noS, plot_FD_effect_resilience_multivar(
+    data_model_noS, "output/revisionFE/noSalix/analyses_H1"), format = "file"),
+  tar_target(fig_FD_effect_vs_climate_multivar_noS, plot_FD_effect_vs_climate_multivar(
+    data_model_noS, "H", "AIC", "output/revisionFE/noSalix/analyses_H2"), format = "file")
 )
 

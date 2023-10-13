@@ -235,7 +235,7 @@ map_climates = function(FUNDIV_climate_species, climate.in, file.in){
     group_by(pca1_median) %>%
     summarize(n = n()) %>%
     ggplot(aes(x = pca1_median, y = n, fill = pca1_median)) +
-    geom_bar(color = "black", stat = "identity") +
+    geom_bar(color = NA, stat = "identity") +
     scale_fill_gradientn(colors = (
       color.data %>% mutate(
         color = ifelse(pca1_median %in% color.data.map$pca1_median, color, "gray"))
