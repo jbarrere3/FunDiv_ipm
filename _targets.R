@@ -46,8 +46,7 @@ list(
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
   # Disturbance coefficients
-  tar_target(disturb_coef_file, "data/disturb_coef.csv", format = "file"), 
-  tar_target(disturb_coef.in, fread(disturb_coef_file)),
+  tar_target(disturb_coef.in, fread("data/disturb_coef.csv")),
   
   # Raw data from FUNDIV
   tar_target(FUNDIV_tree_file, "data/FunDiv_trees_Nadja.csv", format = "file"),
@@ -92,7 +91,7 @@ list(
   tar_target(climate_storm, make_climate(
       FUNDIV_climate_species, quantiles.in = climate_list_storm[[ID.climate_storm]], 
       "storm", 10, exclude.in = c("Carpinus_betulus", "Quercus_ilex", "Salix_caprea"), 
-      method = "frequency", disturb_coef.in, pc1_per_species), 
+      method = "frequency", disturb_coef.in, traits), 
       pattern = map(ID.climate_storm), iteration = "list"), 
   
   # Make species objects
@@ -244,7 +243,7 @@ list(
   # Plot diversity and structure of raw data
   tar_target(fig_div_str_data, plot_clim_vs_div_and_str_data(
     FUNDIV_data, pca12_per_species, climate_list_storm, 
-    "output/revisionFE/div_str.jpg"), format = "file"), 
+    "output/revisionFE/div_str.jpg"), format = "file") 
   
   
   
