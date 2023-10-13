@@ -79,7 +79,7 @@ list(
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Make simulations with storm disturbances -----
+  # -- Prepare data for simulations -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
   # Generate some climates
@@ -91,8 +91,9 @@ list(
   # -- generate one climate object per iteration with branching
   tar_target(climate_storm, make_climate(
       FUNDIV_climate_species, quantiles.in = climate_list_storm[[ID.climate_storm]], 
-      "storm", 10, exclude.in = c("Carpinus_betulus", "Quercus_ilex"), method = "frequency", 
-      disturb_coef.in, pc1_per_species), pattern = map(ID.climate_storm), iteration = "list"), 
+      "storm", 10, exclude.in = c("Carpinus_betulus", "Quercus_ilex", "Salix_caprea"), 
+      method = "frequency", disturb_coef.in, pc1_per_species), 
+      pattern = map(ID.climate_storm), iteration = "list"), 
   
   # Make species objects
   # -- First: list all species object to make
@@ -105,7 +106,10 @@ list(
     ID.species.in = ID.species_storm), 
     pattern = map(ID.species_storm), iteration = "vector", format = "file"),
   
-  # Make simulations 
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Make simulations -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
   # -- Start with a list of forest to simulate
   tar_target(forest_list_storm, make_forest_list(climate_storm, "storm")), 
   # -- Make a vector of ID for each forest to simulate
@@ -120,74 +124,92 @@ list(
    species_storm, sim_equilibrium_storm, ID.forest.in = ID.forest_storm, disturbance.df_storm), 
    pattern = map(ID.forest_storm), iteration = "vector", format = "file"),
    
-  # Extract results
+  
+  
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Prepare traits data -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  # -- Traits data file
+  tar_target(traits_file, "data/traits.csv", format = "file"),
+  # -- Read traits data
+  tar_target(traits, fread(traits_file)),
+  # -- Get recruitment traits
+  tar_target(traits_rec, get_recruitment_traits(
+    fit.list.allspecies, FUNDIV_data, "specific")), 
+  # -- Get all species included in the simulations for filtering
+  tar_target(sp.in.sim, unique(species_list_storm$species)),
+  # -- Get coordinates on the pca axis per species
+  tar_target(pca12_per_species, get_pc12_per_species(
+    subset(traits, species %in% sp.in.sim), 
+    subset(traits_rec, species %in% sp.in.sim))), 
+  
+  
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Extract results form the simulations -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  
+  
   # -- Get functional diversity
-  tar_target(FD_storm, get_FD(forest_list_storm, sim_disturbance_storm, pc1_per_species)),
+  tar_target(FD_multivar, get_FD_multivar(
+    forest_list_storm, sim_disturbance_storm, pca12_per_species)),
   # -- Get resilience metrics
   tar_target(resilience_storm, get_resilience_metrics(
-   sim_disturbance_storm, disturbance.df_storm, forest_list_storm)),
+    sim_disturbance_storm, disturbance.df_storm, forest_list_storm)),
   # -- Format data together
-  tar_target(data_model_storm_all, get_data_model(climate_storm, resilience_storm, FD_storm)),
+  tar_target(data_model_all, get_data_model(climate_storm, resilience_storm, FD_multivar)),
   # -- Only keep simulations that reached equilibrium
-  tar_target(data_model_storm, subset(data_model_storm_all, (SD < 0.15))),
-  
-  
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Traits -----
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  
-  # Traits data file
-  tar_target(traits_file, "data/traits.csv", format = "file"),
-  
-  # Read traits data
-  tar_target(traits, fread(traits_file)),
-  
-  # Get coordinates in the first pca axis per species
-  tar_target(pc1_per_species, get_pc1_per_species(traits)),
-  
+  tar_target(data_model, subset(data_model_all, (SD < 0.15))),
   
   
    
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Plots for the methods of the paper -----
+  # -- Plots and tables for the methods -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
    
   # Map of the different climates used for the analysis
   tar_target(fig_map_climates, map_climates(
    FUNDIV_climate_species, climate.in = climate_list_storm, 
-   "output/fig_methods/map_climates.jpg"), format = "file"), 
+   "output/methods/map_climates.jpg"), format = "file"), 
   
   # Plot the pca with species traits
-  tar_target(fig_traits_pca, plot_traits_pca(
-    traits, get_species_sim(climate_storm), "output/fig_methods/traits.jpg"), 
-    format = "file"),
+  tar_target(fic_pca12, plot_traits_pca12(
+    subset(traits, species %in% sp.in.sim), subset(traits_rec, species %in% sp.in.sim), 
+    species_list_storm, "output/methods/pca_traits.jpg"), format = "file"),
   
   # Plot of the resilience metrics
   tar_target(fig_metrics, plot_metrics(
-    sim_disturbance_storm[64], "output/fig_methods/metrics.jpg"), format = "file"),
+    sim_disturbance_storm[64], "output/methods/metrics.jpg"), format = "file"),
+  
+  # Export species information in a table
+  tar_target(table_species, export_species_table(
+    FUNDIV_data, pca12_per_species, species_list_storm, 
+    "output/methods/species_table.tex"), format = "file"), 
   
   
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Plots for analyses -----
+  # -- Main analyses -----
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   
   
   # Plot the effect of FD on resilience
-  tar_target(fig_FD_effect_resilience, plot_FD_effect_resilience(
-    data_model_storm, "output/analyses_H1"), 
-    format = "file"),
+  tar_target(fig_FD_effect_resilience_multivar, plot_FD_effect_resilience_multivar(
+    data_model, "output/analyses/H1"), format = "file"),
   
   
   # Plot how the FD effect changes with climate
-  tar_target(fig_FD_effect_vs_climate_quadra, plot_FD_effect_vs_climate_quadra(
-    data_model_storm, "H", "AIC", "output/analyses_H2"), format = "file"),
-  
+  tar_target(fig_FD_effect_vs_climate_multivar, plot_FD_effect_vs_climate_multivar(
+    data_model, "H", "AIC", "output/analyses/H2"), format = "file"), 
   
   # Make a network analysis with peacewise SEM
-  tar_target(fig_sem_storm, plot_sem(
-    data_model_storm, "FD", "H", "recovery", "output/analyses_H3"), 
-    format = "file"), 
+  tar_target(fig_sem_multivar, plot_sem_multivar(
+    data_model, "FDis", "H", "recovery", "output/analyses/H3"), format = "file"), 
+  
+  
+  
   
   #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
   # -- Plots for supplementary -----
@@ -195,87 +217,37 @@ list(
    
   # Co-variation between resilience metrics
   tar_target(fig_covariation_FD_storm, plot_covariation(
-    data_model_storm, c("FD", "H", "CWM", "resistance", "recovery", "resilience"), 
-    "output/supplementary/fig_covar_storm.png"), format = "file"),
+    data_model, c("FD", "H", "CWM1", "CWM2", "resistance", "recovery", "resilience"), 
+    "output/supplementary/fig_covar_storm.png")),
   
   # Relation between diversity and density of trees
   tar_target(fig_tree_packing, plot_tree_packing(
-    data_model_storm, "output/supplementary/fig_treepacking.jpg"), format = "file"), 
+    data_model, "output/supplementary/fig_treepacking.jpg"), format = "file"), 
   
   # Relation between climate, diversity and structure
   tar_target(fig_climate_diversity_structure, plot_climate_vs_diversity_and_structure(
-    data_model_storm, "output/supplementary/fig_climate_vs_diversity_and_structure.jpg"), 
+    data_model, "output/supplementary/fig_climate_vs_diversity_and_structure.jpg"), 
     format = "file"), 
   
   # SEM with additional relations
-  tar_target(fig_sem_supp, plot_sem_supp(
-    data_model_storm, dir.in = "output/supplementary"), format = "file"), 
+  tar_target(fig_sem_multivar_supp, plot_sem_multivar_supp(
+    data_model, dir.in = "output/supplementary"), format = "file"), 
   
   # Plot some simulations
   tar_target(fig_simulations, plot_sim_dist(
-    sim_disturbance_storm[data_model_storm$ID.forest[c(1:12)]], 
+    sim_disturbance_storm[data_model$ID.forest[c(1:12)]], 
     "output/supplementary/simulations.jpg"), format = "file"), 
   tar_target(fig_simulations_eq, plot_sim_dist(
-    sim_equilibrium_storm[data_model_storm$ID.forest[c(1:12)]], 
+    sim_equilibrium_storm[data_model$ID.forest[c(1:12)]], 
     "output/supplementary/simulations_eq.jpg"), format = "file"), 
-  
-  
-  
-  
-  
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  # -- Revisions for Functional Ecology ----
-  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-  
-  # Get recruitment traits and pca coordinates
-  tar_target(traits_rec, get_recruitment_traits(
-    fit.list.allspecies, FUNDIV_data, "specific")), 
-  tar_target(pca12_per_species, get_pc12_per_species(traits, traits_rec)), 
-  
-  # Calculate functional diversity in a multivariate space
-  tar_target(FD_multivar, get_FD_multivar(
-    forest_list_storm, sim_disturbance_storm, pca12_per_species)),
-  
-  # Extract data to fit models
-  tar_target(data_model_all, get_data_model(climate_storm, resilience_storm, FD_multivar)),
-  tar_target(data_model, subset(data_model_all, (SD < 0.15))),
-  
-  # Plot traits in multivariate space
-  tar_target(fic_pca12, plot_traits_pca12(
-    traits, traits_rec, species_list_storm, "output/revisionFE/pca_traits.jpg"), 
-    format = "file"),
-  tar_target(fic_pca12_all, plot_traits_pca12_all(
-    traits, traits_rec, species_list_storm, "output/revisionFE/pca_traits_all.jpg"), 
-    format = "file"),
   
   # Plot diversity and structure of raw data
   tar_target(fig_div_str_data, plot_clim_vs_div_and_str_data(
     FUNDIV_data, pca12_per_species, climate_list_storm, 
     "output/revisionFE/div_str.jpg"), format = "file"), 
   
-  # Main statistical analyses
-  tar_target(fig_FD_effect_resilience_multivar, plot_FD_effect_resilience_multivar(
-    data_model, "output/revisionFE/analyses_H1"), format = "file"),
-  tar_target(fig_FD_effect_vs_climate_multivar, plot_FD_effect_vs_climate_multivar(
-    data_model, "H", "AIC", "output/revisionFE/analyses_H2"), format = "file"), 
-  tar_target(fig_sem_multivar, plot_sem_multivar(
-    data_model, "FDis", "H", "recovery", "output/revisionFE/analyses_H3"), 
-    format = "file"), 
   
-  # Export species information in a table
-  tar_target(table_species, export_species_table(
-    FUNDIV_data, pca12_per_species, species_list_storm, 
-    "output/revisionFE/species_table.tex"), format = "file"), 
   
-  # SEM with additional relations
-  tar_target(fig_sem_multivar_supp, plot_sem_multivar_supp(
-    data_model, dir.in = "output/revisionFE/supplementary"), format = "file"),
   
-  # Analyses without Salix
-  tar_target(data_model_noS, remove_salix(data_model)), 
-  tar_target(fig_FD_effect_resilience_multivar_noS, plot_FD_effect_resilience_multivar(
-    data_model_noS, "output/revisionFE/noSalix/analyses_H1"), format = "file"),
-  tar_target(fig_FD_effect_vs_climate_multivar_noS, plot_FD_effect_vs_climate_multivar(
-    data_model_noS, "H", "AIC", "output/revisionFE/noSalix/analyses_H2"), format = "file")
 )
 
