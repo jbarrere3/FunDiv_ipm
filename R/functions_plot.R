@@ -59,14 +59,14 @@ plot_traits_pca12 <- function(traits, traits_rec, species_list, file.in){
     mutate(var = gsub("\\.", "\\ ", var), 
            pca1 = pca1*(max(abs(data.ind$pca1))/max(abs(pca1)))*0.9, 
            pca2 = pca2*(max(abs(data.ind$pca2))/max(abs(pca2)))*0.9, 
-           pca1.txt = pca1*1.2, pca2.txt = pca2*1.2) 
+           pca1.txt = pca1*1.1, pca2.txt = pca2*1.2) 
   
   # Space fraction between axis and text
   space.frac = 0.025
   
   # Range of x and y axis for plotting
   range.x = range(data.var$pca1.txt)*1.5
-  range.y = range(data.var$pca2.txt)*1.1
+  range.y = range(data.var$pca2.txt)*c(1.2, 1.7)
   
   # Make the plot
   plot.out = data.ind %>%
@@ -1413,9 +1413,8 @@ plot_FD_effect_vs_climate_multivar = function(
 
 #' Function to show co-variations between resilience metrics
 #' @param data_model Data from simulations formatted
-#' @param var.in vector of variables to include in the pairwise analysis
 #' @param file.in Name of the file to save, including path
-plot_covariation = function(data_model, var.in, file.in){
+plot_covariation = function(data_model, file.in){
   
   # Create directory if needed
   create_dir_if_needed(file.in)
@@ -1427,8 +1426,10 @@ plot_covariation = function(data_model, var.in, file.in){
   # Make the plot
   pairs((data_model %>%
            mutate(recovery = log(recovery), 
-                  resilience = log(resilience))%>% 
-           dplyr::select(var.in) ), pch = 19, lower.panel = NULL)
+                  resilience = log(resilience)) %>% 
+           dplyr::select("FD" = "FDis", "H", "CWM1", "CWM2", "resistance", 
+                         "recovery", "resilience") ), 
+        pch = 19, lower.panel = NULL)
   
   
   # Return name of the file generated 
@@ -1485,13 +1486,13 @@ plot_climate_vs_diversity_and_structure = function(data_model, file.in){
     mutate(dbh_mean_diff = dbh_mean_postdist - dbh_mean, 
            dbh_q10_diff = dbh_q10_postdist - dbh_q10, 
            dbh_q90_diff = dbh_q90_postdist - dbh_q90) %>%
-    dplyr::select(climate, H, FD, CWM, BA_diff, BA_eq, dbh_mean, Nha,
+    dplyr::select(climate, H, FD = FDis, CWM1, CWM2, BA_diff, BA_eq, dbh_mean, Nha,
                   dbh_mean_diff, dbh_q10_diff, dbh_q90_diff) %>%
     drop_na() %>%
-    gather(key = "variable", value = "value", "H", "FD", "CWM", "BA_eq", "Nha", 
+    gather(key = "variable", value = "value", "H", "FD", "CWM1", "CWM2", "BA_eq", "Nha", 
            "dbh_mean", "dbh_mean_diff", "dbh_q10_diff", "dbh_q90_diff") %>%
     mutate(variable = factor(variable, levels = c(
-      "H", "FD", "CWM", "BA_eq", "dbh_mean", "Nha", "dbh_mean_diff", 
+      "H", "FD", "CWM1", "CWM2", "BA_eq", "dbh_mean", "Nha", "dbh_mean_diff", 
       "dbh_q10_diff", "dbh_q90_diff"))) %>%
     ggplot(aes(x = climate, y = value, fill = climate)) + 
     geom_boxplot(alpha = 0.7) + 

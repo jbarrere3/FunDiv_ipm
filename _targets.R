@@ -216,8 +216,7 @@ list(
    
   # Co-variation between resilience metrics
   tar_target(fig_covariation_FD_storm, plot_covariation(
-    data_model, c("FD", "H", "CWM1", "CWM2", "resistance", "recovery", "resilience"), 
-    "output/supplementary/fig_covar_storm.png")),
+    data_model, "output/supplementary/fig_covar_storm.png")),
   
   # Relation between diversity and density of trees
   tar_target(fig_tree_packing, plot_tree_packing(
@@ -234,16 +233,16 @@ list(
   
   # Plot some simulations
   tar_target(fig_simulations, plot_sim_dist(
-    sim_disturbance_storm[data_model$ID.forest[c(1:12)]], 
+    sim_disturbance_storm[data_model$ID.forest[c(401:412)]], 
     "output/supplementary/simulations.jpg"), format = "file"), 
   tar_target(fig_simulations_eq, plot_sim_dist(
-    sim_equilibrium_storm[data_model$ID.forest[c(1:12)]], 
+    sim_equilibrium_storm[data_model$ID.forest[c(401:412)]], 
     "output/supplementary/simulations_eq.jpg"), format = "file"), 
   
   # Plot diversity and structure of raw data
   tar_target(fig_div_str_data, plot_clim_vs_div_and_str_data(
     FUNDIV_data, pca12_per_species, climate_list_storm, 
-    "output/revisionFE/div_str.jpg"), format = "file") 
+    "output/supplementary/div_str.jpg"), format = "file") 
   
   
   
