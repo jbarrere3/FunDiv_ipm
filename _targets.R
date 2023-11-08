@@ -242,7 +242,21 @@ list(
   # Plot diversity and structure of raw data
   tar_target(fig_div_str_data, plot_clim_vs_div_and_str_data(
     FUNDIV_data, pca12_per_species, climate_list_storm, 
-    "output/supplementary/div_str.jpg"), format = "file") 
+    "output/supplementary/div_str.jpg"), format = "file"), 
+
+  
+  
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+  # -- Plots and analyses for revision -----
+  #%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%  
+  
+  # Extract species composition at equilibrium, post-dist and post-recov. 
+  tar_target(sp_composition_dist, get_sp_composition(
+    sim_disturbance_storm, sp.in.sim, c(1, max(disturbance.df_storm$t)+1, 4000))), 
+  
+  # Plot changes in species composition
+  tar_target(fig_spcomposition, plot_spcomposition(
+    sp_composition_dist, data_model, "output/supplementary"), format = "file")
   
   
   

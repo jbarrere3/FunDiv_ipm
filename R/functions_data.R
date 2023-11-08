@@ -1200,12 +1200,54 @@ disturb_fun <- function(x, species, disturb = NULL, ...){
 
 
 
-#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-#' Below: FUNCTIONS FOR THE REVISION TO FUN ECOL
-#%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
-
+#' Extract for all simulations the basal area of species present at a given timestep
+#' @param sim_disturbance character vector containing name of rds files  
+#'                        containing disturbance simulations
+#' @param sp.in.sim character vector of all species present in the simulations
+#' @param times.in vector of time steps for which to extract sp compo
+get_sp_composition = function(sim_disturbance, sp.in.sim, times.in){
+  
+  # Initialize output dataframe for each time step
+  df.out = data.frame(ID.forest = c(1:length(sim_disturbance)))
+  for(sp in sp.in.sim) eval(parse(text = paste0("df.out$", sp, " = 0")))
+  
+  # Initialize output list
+  out = list()
+  for(t in 1:length(times.in)) eval(parse(text = paste0(
+    "out$time", times.in[t], " = df.out")))
+  
+  # Loop on all species combination
+  for(i in 1:length(sim_disturbance)){
+    
+    # Printer
+    print(paste0("Reading simulation ", i, "/", length(sim_disturbance)))
+    
+    # Read simulation i
+    sim.i = readRDS(sim_disturbance[i])
+    
+    # First, verify that equilibrium was reached
+    if(!is.na(sim.i[1, 1])){
+      
+      # If equilibrium is reached, then extract species composition at each time
+      for(k in 1:length(times.in)){
+        
+        # Restrict sim output to the year of interest
+        data.ik = sim.i %>% 
+          filter(time == times.in[k] & var == "BAsp") %>%
+          filter(!equil)
+        
+        # Loop on species present to complete output
+        for(j in 1:dim(data.ik)[1]) out[[k]][i, data.ik$species[j]] = data.ik$value[j]
+      }
+      
+    }
+    
+  }
+  
+  # Return output
+  return(out)
+  
+}
 
 
 

@@ -1904,3 +1904,136 @@ plot_clim_vs_div_and_str_data = function(
 }
 
 
+
+#' Function to produce supplementary plots on change in species composition
+#' @param sp_composition_dist Species composition at different time steps of simulations
+#' @param data_model data used to fit the model
+#' @param dir.out directory where to save the plots
+plot_spcomposition = function(sp_composition_dist, data_model, dir.out){
+  
+  # Files to save
+  file.pca = paste0(dir.out, "/fig_spcomposition_PCA.jpg")
+  file.ED = paste0(dir.out, "/fig_spcomposition_ED.jpg")
+  create_dir_if_needed(file.pca)
+  
+  # Filter data to only keep simulations selected
+  for(i in 1:length(names(sp_composition_dist))){
+    sp_composition_dist[[i]] = sp_composition_dist[[i]] %>%
+      filter(ID.forest %in% data_model$ID.forest)
+  }
+  
+  # Make the reference pca
+  pca.ref = prcomp((sp_composition_dist[[1]] %>% dplyr::select(-ID.forest)), 
+                   center = T, scale = T)
+  
+  # Extract data for variables
+  data.var = data.frame(var = rownames(get_pca_var(pca.ref)[[1]]), 
+                        pca1 = as.numeric(get_pca_var(pca.ref)[[1]][, 1]), 
+                        pca2 = as.numeric(get_pca_var(pca.ref)[[1]][, 2]))
+  
+  # Extract data for individuals
+  data.ind = data.frame(ID.forest = sp_composition_dist[[1]]$ID.forest) %>%
+    cbind(as.data.frame(get_pca_ind(pca.ref)[[1]]))
+  
+  # Predict the coordinates on each axis for the post-disturbance data
+  pca.post.dist = predict(pca.ref, newdata = sp_composition_dist[[2]])
+  
+  # Predict the coordinates on each axis for the post-disturbance data
+  pca.post.recov = predict(pca.ref, newdata = sp_composition_dist[[3]])
+  
+  data.final = data.frame(ID.forest = sp_composition_dist[[1]]$ID.forest) %>%
+    # Add resistance in species composition
+    mutate(ED.sp.post.dist = rowSums(
+      sqrt((data.ind[, -1] - pca.post.dist)^2))) %>%
+    # Add distance with post-recovery phase
+    mutate(ED.sp.post.recov = rowSums(
+      sqrt((data.ind[, -1] - pca.post.recov)^2))) %>%
+    # Add resistance in basal area
+    left_join((data_model %>% dplyr::select(ID.forest, resistance)), 
+              by = "ID.forest") %>%
+    # Add difference in basal area between predist and postrecov
+    mutate(BAsum.predist = rowSums(sp_composition_dist[[1]][, -1]), 
+           BAsum.postdist = rowSums(sp_composition_dist[[2]][, -1]),
+           BAsum.postrecov = rowSums(sp_composition_dist[[3]][, -1]), 
+           BAdiff.postrecov = abs(BAsum.postrecov - BAsum.predist))
+  
+  # PCA plots
+  # -- Plot the pca before and after disturbance
+  plot.pca.resist = data.ind %>%
+    mutate(type = "pre-disturbance") %>%
+    dplyr::select(ID.forest, type, PC1 = Dim.1, PC2 = Dim.2) %>%
+    rbind((data.frame(ID.forest = data.ind$ID.forest, type = "post-disturbance", 
+                      PC1 = pca.post.dist[, 1], PC2 = pca.post.dist[, 2]))) %>%
+    mutate(PC1 = as.numeric(PC1), PC2 = as.numeric(PC2)) %>%
+    drop_na() %>%
+    ggplot(aes(x = PC1, y = PC2, group = ID.forest)) + 
+    geom_line(color = "grey") + 
+    geom_point(aes(fill = type), shape = 21, color = "black", alpha = 0.5) + 
+    xlab(paste0("PCA1 (", round(summary(pca.ref)$importance[2, 1]*100, digits = 2), "%)")) +
+    ylab(paste0("PCA2 (", round(summary(pca.ref)$importance[2, 2]*100, digits = 2), "%)")) + 
+    geom_hline(yintercept = 0, linetype = "dashed") + 
+    geom_vline(xintercept = 0, linetype = "dashed") + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          legend.key = element_blank(), 
+          legend.title = element_blank(), 
+          legend.position = c(0.8, 0.2))
+  # -- Plot the pca before dist vs after recovery
+  plot.pca.recov = data.ind %>%
+    mutate(type = "pre-disturbance") %>%
+    dplyr::select(ID.forest, type, PC1 = Dim.1, PC2 = Dim.2) %>%
+    rbind((data.frame(ID.forest = data.ind$ID.forest, type = "post-recovery", 
+                      PC1 = pca.post.recov[, 1], PC2 = pca.post.recov[, 2]))) %>%
+    mutate(PC1 = as.numeric(PC1), PC2 = as.numeric(PC2)) %>%
+    drop_na() %>%
+    ggplot(aes(x = PC1, y = PC2, group = ID.forest)) + 
+    geom_line(color = "grey") + 
+    geom_point(aes(fill = type), shape = 21, color = "black", alpha = 0.5) + 
+    xlab(paste0("PCA1 (", round(summary(pca.ref)$importance[2, 1]*100, digits = 2), "%)")) +
+    ylab(paste0("PCA2 (", round(summary(pca.ref)$importance[2, 2]*100, digits = 2), "%)")) + 
+    geom_hline(yintercept = 0, linetype = "dashed") + 
+    geom_vline(xintercept = 0, linetype = "dashed") + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank(), 
+          legend.key = element_blank(), 
+          legend.title = element_blank(), 
+          legend.position = c(0.8, 0.2))
+  # -- Merge the two plots together
+  plot.pca = plot_grid(plot.pca.resist, plot.pca.recov, nrow = 1, 
+                       labels = c("(a)", "(b)"), scale = 0.9)
+  
+  
+  # Plots involving euclidian distance
+  # -- post-predist vs resistance in basal area
+  plot.ED.resist = data.final %>% 
+    ggplot(aes(x = ED.sp.post.dist, y = plogis(resistance))) + 
+    geom_point(shape = 21, fill = "gray", alpha = 0.7) +
+    xlab("Euclidian distance in species composition\n(post- vs pre-disturbance)") + 
+    ylab("Resistance") + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank())
+  # -- predist vs postrecovery in species composition and basal area
+  plot.ED.recov = data.final %>% 
+    ggplot(aes(x = ED.sp.post.recov, y = BAdiff.postrecov)) + 
+    geom_point(shape = 21, fill = "gray", alpha = 0.7) +
+    xlab("Euclidian distance in species composition\n(post-recovery vs pre-disturbance)") + 
+    ylab("Difference in basal area between\npost-recovery and pre-disturbance") + 
+    theme(panel.background = element_rect(fill = "white", color = "black"), 
+          panel.grid = element_blank())
+  # -- Merge the two plots together
+  plot.ED = plot_grid(plot.ED.resist, plot.ED.recov, nrow = 1, 
+                      labels = c("(a)", "(b)"), scale = 0.9)
+  
+  
+  # Save the plots 
+  ggsave(file.pca, plot.pca, width = 30, height = 13, 
+         units = "cm", dpi = 600, bg = "white")
+  ggsave(file.ED, plot.ED, width = 24, height = 9, 
+         units = "cm", dpi = 600, bg = "white")
+  
+  # Return the files saved
+  return(c(file.pca, file.ED))
+  
+}
+
+
