@@ -24,7 +24,7 @@ lapply(grep("R$", list.files("R"), value = TRUE), function(x) source(file.path("
 packages.in <- c("dplyr", "ggplot2", "matreex", "tidyr", "data.table", 
                  "factoextra", "modi", "sf", "rnaturalearth", "scales", 
                  "cowplot", "multcomp", "piecewiseSEM", "future", "FD", "GGally", 
-                 "statmod", "xtable", "car", "modi", "grid", "gridExtra")
+                 "statmod", "xtable", "car", "modi", "grid", "gridExtra", "semEff")
 for(i in 1:length(packages.in)) if(!(packages.in[i] %in% rownames(installed.packages()))) install.packages(packages.in[i])
 # Targets options
 options(tidyverse.quiet = TRUE, clustermq.scheduler = "multiprocess")
@@ -204,8 +204,11 @@ list(
     data_model, "H", "AIC", "output/analyses/H2"), format = "file"), 
   
   # Make a network analysis with peacewise SEM
+  # -- Fit sem model
+  tar_target(mod_sem, fit_sem(data_model)),
+  # -- Make the plot
   tar_target(fig_sem_multivar, plot_sem_multivar(
-    data_model, "FDis", "H", "recovery", "output/analyses/H3"), format = "file"), 
+    mod_sem, "output/analyses/H3"), format = "file"), 
   
   
   
@@ -228,8 +231,11 @@ list(
     format = "file"), 
   
   # SEM with additional relations
-  tar_target(fig_sem_multivar_supp, plot_sem_multivar_supp(
-    data_model, dir.in = "output/supplementary"), format = "file"), 
+  # -- Fit sem model
+  tar_target(mod_sem_supp, fit_sem_supp(data_model)),
+  # -- Make the plot
+  tar_target(fig_sem_multivar_supp, plot_sem_multivar(
+    mod_sem_supp, "output/supplementary"), format = "file"), 
   
   # Plot some simulations
   tar_target(fig_simulations, plot_sim_dist(
@@ -256,7 +262,12 @@ list(
   
   # Plot changes in species composition
   tar_target(fig_spcomposition, plot_spcomposition(
-    sp_composition_dist, data_model, "output/supplementary"), format = "file")
+    sp_composition_dist, data_model, "output/supplementary"), format = "file"), 
+  
+  # Plot the timing of disturbance and recovery
+  tar_target(fig_timing_dist, plot_timing_dist(
+    sim_disturbance_storm[64], disturbance.df_storm, 
+    "output/supplementary/fig_timing.jpg"), format = "file")
   
   
   
