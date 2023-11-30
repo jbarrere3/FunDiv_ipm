@@ -507,6 +507,7 @@ plot_sem_multivar = function(mod_sem, dir.in){
   # File for the figure
   fig.file.in = paste0(dir.in, "/sem_storm.jpg")
   table.file.in = paste0(dir.in, "/stat_sem.tex")
+  table.file.csv.in = paste0(dir.in, "/stat_sem.csv")
   
   # Create directory if needed
   create_dir_if_needed(fig.file.in)
@@ -618,6 +619,8 @@ plot_sem_multivar = function(mod_sem, dir.in){
         include.rownames=FALSE, hline.after = c(0, 2, dim(table.stat)[1]), 
         include.colnames = FALSE, caption.placement = "top", 
         file = table.file.in, size = "\\tiny")
+  # -- Export as csv 
+  write.table(table.stat, table.file.csv.in, row.names = F, col.names = F, sep = ",")
   
   # Add stat to the plot box data
   data.plot.box = data.plot.box %>%
@@ -708,7 +711,7 @@ plot_sem_multivar = function(mod_sem, dir.in){
   ggsave(fig.file.in, plot.out, width = 37, height = 25, units = "cm", dpi = 600, bg = "white")
   
   # return the name of all the plots made
-  return(c(fig.file.in))
+  return(c(fig.file.in, table.file.csv.in))
   
 }
 
@@ -723,6 +726,7 @@ plot_FD_effect_resilience_multivar = function(data_model, dir.in){
   fig.file.residuals = paste0(dir.in, "/residuals.jpg")
   fig.file.observations = paste0(dir.in, "/observations.jpg")
   table.file.stats = paste0(dir.in, "/stats_H1.tex")
+  table.file.stats.csv = paste0(dir.in, "/stats_H1.csv")
   
   # create output directory if it doesn't exist
   create_dir_if_needed(fig.file.in)
@@ -946,8 +950,11 @@ plot_FD_effect_resilience_multivar = function(data_model, dir.in){
         file = table.file.stats)
   
   
+  # Save the csv file
+  write.table(table.stats, table.file.stats.csv, row.names = FALSE, col.names = FALSE)
+  
   # Return name of the file saved
-  return(c(fig.file.in, fig.file.predictions, table.file.stats))
+  return(c(fig.file.in, fig.file.predictions, table.file.stats, table.file.stats.csv))
 }
 
 
@@ -1698,6 +1705,8 @@ plot_spcomposition = function(sp_composition_dist, data_model, dir.out){
     ggplot(aes(x = PC1, y = PC2, group = ID.forest)) + 
     geom_line(color = "grey") + 
     geom_point(aes(fill = type), shape = 21, color = "black", alpha = 0.5) + 
+    scale_fill_manual(values = c(`post-disturbance` = "red", 
+                                 `pre-disturbance` = "blue")) +
     xlab(paste0("PCA1 (", round(summary(pca.ref)$importance[2, 1]*100, digits = 2), "%)")) +
     ylab(paste0("PCA2 (", round(summary(pca.ref)$importance[2, 2]*100, digits = 2), "%)")) + 
     geom_hline(yintercept = 0, linetype = "dashed") + 
@@ -1720,6 +1729,8 @@ plot_spcomposition = function(sp_composition_dist, data_model, dir.out){
     geom_point(aes(fill = type), shape = 21, color = "black", alpha = 0.5) + 
     xlab(paste0("PCA1 (", round(summary(pca.ref)$importance[2, 1]*100, digits = 2), "%)")) +
     ylab(paste0("PCA2 (", round(summary(pca.ref)$importance[2, 2]*100, digits = 2), "%)")) + 
+    scale_fill_manual(values = c(`post-recovery` = "green", 
+                                 `pre-disturbance` = "blue")) +
     geom_hline(yintercept = 0, linetype = "dashed") + 
     geom_vline(xintercept = 0, linetype = "dashed") + 
     theme(panel.background = element_rect(fill = "white", color = "black"), 

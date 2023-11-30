@@ -483,8 +483,14 @@ export_species_table = function(FUNDIV_data, pca12_per_species, species_list, fi
         include.colnames = FALSE, caption.placement = "top", size = "\\scriptsize",
         file = file.out)
   
+  # Also export as csv file
+  # -- Change filename
+  file.csv.out = gsub("\\.tex", "\\.csv", file.out)
+  write.table(tex.table, file = file.csv.out, row.names = FALSE, 
+              col.names = FALSE, sep = ",")
+  
   # Return the file exported
-  return(file.out)
+  return(c(file.out, file.csv.out))
   
   
 }
